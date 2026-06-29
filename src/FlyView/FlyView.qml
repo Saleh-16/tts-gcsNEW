@@ -74,6 +74,13 @@ Item {
 
         FlyViewMap {
             id:                     mapControl
+            anchors.left:           parent.left
+            anchors.right:          parent.right
+            anchors.bottom:         parent.bottom
+            anchors.top:            parent.top
+            anchors.topMargin:      _root.height - 300 - 90
+            anchors.bottomMargin:   90
+            anchors.rightMargin:    _root.width * 0.50
             planMasterController:   _planController
             rightPanelWidth:        ScreenTools.defaultFontPixelHeight * 9
             pipView:                _pipView
@@ -121,7 +128,7 @@ Item {
 
         FlyViewCustomLayer {
             id:                 customOverlay
-            anchors.fill:       widgetLayer
+            anchors.fill:       mapHolder
             z:                  _fullItemZorder + 2
             parentToolInsets:   widgetLayer.totalToolInsets
             mapControl:         _mapControl
