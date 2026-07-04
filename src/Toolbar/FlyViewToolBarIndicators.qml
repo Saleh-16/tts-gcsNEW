@@ -1,17 +1,13 @@
 import QtQuick
-
 import QGroundControl
 import QGroundControl.Controls
 import QGroundControl.Toolbar
-
 Item {
     objectName:    "flyViewToolBarIndicators"
     implicitWidth: mainLayout.width + _widthMargin
-
     property var  _activeVehicle:           QGroundControl.multiVehicleManager.activeVehicle
     property real _toolIndicatorMargins:    ScreenTools.defaultFontPixelHeight * 0.66
     property real _widthMargin:             _toolIndicatorMargins * 2
-
     Row {
         id:                 mainLayout
         anchors.margins:    _toolIndicatorMargins
@@ -19,7 +15,6 @@ Item {
         anchors.top:        parent.top
         anchors.bottom:     parent.bottom
         spacing:            ScreenTools.defaultFontPixelWidth * 1.75
-
         Repeater {
             id:     appRepeater
             model:  QGroundControl.corePlugin.toolBarIndicators
@@ -27,19 +22,17 @@ Item {
                 anchors.top:        parent.top
                 anchors.bottom:     parent.bottom
                 source:             modelData
-                visible:            item.showIndicator
+                visible:            item.showIndicator && modelData.toString().indexOf("GPS") === -1
             }
         }
-
         Repeater {
             id:     toolIndicatorsRepeater
             model:  _activeVehicle ? _activeVehicle.toolIndicators : []
-
             Loader {
                 anchors.top:        parent.top
                 anchors.bottom:     parent.bottom
                 source:             modelData
-                visible:            item.showIndicator
+                visible:            item.showIndicator && modelData.toString().indexOf("GPS") === -1
             }
         }
     }

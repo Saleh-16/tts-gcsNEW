@@ -11,11 +11,16 @@ RowLayout {
         extraWidth:             instrumentPanel.extraValuesWidth
         settingsGroup:          factValueGrid.telemetryBarSettingsGroup
         specificVehicleForCard: null // Tracks active vehicle
+        visible:            false
+
     }
 
     FlyViewInstrumentPanel {
         id:                 instrumentPanel
         Layout.alignment:   Qt.AlignBottom
-        visible:            QGroundControl.corePlugin.options.flyView.showInstrumentPanel && _showSingleVehicleUI
+        // ── تم إخفاؤه لصالح الأفق/البوصلة المخصصة في FlyViewCustomLayer.qml ──
+        // كان أصلاً:
+        // visible: QGroundControl.corePlugin.options.flyView.showInstrumentPanel && _showSingleVehicleUI
+        visible:            false
     }
 }

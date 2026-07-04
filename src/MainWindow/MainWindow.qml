@@ -3,7 +3,6 @@ import QtQuick.Controls
 import QtQuick.Dialogs
 import QtQuick.Layouts
 import QtQuick.Window
-
 import QGroundControl
 import QGroundControl.Controls
 import QGroundControl.FactControls
@@ -11,38 +10,32 @@ import QGroundControl.FlyView
 import QGroundControl.FlightMap
 import QGroundControl.PlanView
 import QGroundControl.Toolbar
-
 /// @brief Native QML top level window
 /// All properties defined here are visible to all QML pages.
 ApplicationWindow {
     id:         mainWindow
     visible:    true
+    title:      "TTS GROUP"
     // The special casing for android prevents white bars from showing up on the edges of the screen with newer android versions
     flags:      Qt.Window | (ScreenTools.isAndroid ? Qt.ExpandedClientAreaHint | Qt.NoTitleBarBackgroundHint : 0)
-
     Component.onCompleted: {
         // Start the sequence of first run prompt(s)
         firstRunPromptManager.nextPrompt()
     }
-
     /// Saves main window position and size and re-opens it in the same position and size next time
     MainWindowSavedState {
         window: mainWindow
     }
-
     QtObject {
         id: firstRunPromptManager
-
         property var currentDialog:     null
         property var rgPromptIds:       QGroundControl.corePlugin.firstRunPromptsToShow()
         property int nextPromptIdIndex: 0
-
         function clearNextPromptSignal() {
             if (currentDialog) {
                 currentDialog.closed.disconnect(nextPrompt)
             }
         }
-
         function nextPrompt() {
             if (nextPromptIdIndex < rgPromptIds.length) {
                 var component = Qt.createComponent(QGroundControl.corePlugin.firstRunPromptResource(rgPromptIds[nextPromptIdIndex]));
@@ -56,47 +49,37 @@ ApplicationWindow {
             }
         }
     }
-
     readonly property real      _topBottomMargins:          ScreenTools.defaultFontPixelHeight * 0.5
-
+    // ── TTS GROUP: permanent left sidebar (replaces dropdown-only navigation) ──
+    readonly property real      _sidebarWidth:              ScreenTools.defaultFontPixelHeight * 3.4
     //-------------------------------------------------------------------------
     //-- Global Scope Variables
-
     QtObject {
         id: globals
-
         readonly property var       activeVehicle:                  QGroundControl.multiVehicleManager.activeVehicle
         readonly property real      defaultTextHeight:              ScreenTools.defaultFontPixelHeight
         readonly property real      defaultTextWidth:               ScreenTools.defaultFontPixelWidth
         readonly property var       planMasterControllerFlyView:    flyView.planController
         readonly property var       guidedControllerFlyView:        flyView.guidedController
-
         // Number of QGCTextField's with validation errors. Used to prevent closing panels with validation errors.
         property int                validationErrorCount:           0
-
         // Set to a non-empty string to block navigation with a custom reason (e.g. during calibration)
         property string             navigationBlockedReason:        ""
-
         // Property to manage RemoteID quick access to settings page
         property bool               commingFromRIDIndicator:        false
     }
-
     /// Default color palette used throughout the UI
     QGCPalette { id: qgcPal; colorGroupEnabled: true }
-
     //-------------------------------------------------------------------------
     //-- Actions
-
     signal armVehicleRequest
     signal forceArmVehicleRequest
     signal disarmVehicleRequest
     signal vtolTransitionToFwdFlightRequest
     signal vtolTransitionToMRFlightRequest
     signal showPreFlightChecklistIfNeeded
-
     //-------------------------------------------------------------------------
     //-- Global Scope Functions
-
     // This function is used to prevent view switching if there are validation errors
     function allowViewSwitch(previousValidationErrorCount = 0, showErrorOnDisallow = true) {
         // Check for explicit navigation block (e.g. calibration in progress)
@@ -124,19 +107,16 @@ ApplicationWindow {
         }
         return allowed
     }
-
     function showPlanView() {
         flyView.visible = false
         planView.visible = true
         toolDrawer.visible = false
     }
-
     function showFlyView() {
         flyView.visible = true
         planView.visible = false
         toolDrawer.visible = false
     }
-
     function showTool(toolTitle, toolSource, toolIcon) {
         toolDrawer.backIcon     = flyView.visible ? "/qmlimages/PaperPlane.svg" : "/qmlimages/Plan.svg"
         toolDrawer.toolTitle    = toolTitle
@@ -144,20 +124,16 @@ ApplicationWindow {
         toolDrawer.toolIcon     = toolIcon
         toolDrawer.visible      = true
     }
-
     function showAnalyzeTool() {
         showTool(qsTr("Analyze Tools"), "qrc:/qml/QGroundControl/AnalyzeView/AnalyzeView.qml", "/qmlimages/Analyze.svg")
     }
-
     function showVehicleConfig() {
         showTool(qsTr("Vehicle Configuration"), "qrc:/qml/QGroundControl/VehicleSetup/VehicleConfigView.qml", "/qmlimages/Gears.svg")
     }
-
     function showVehicleConfigParametersPage() {
         showVehicleConfig()
         toolDrawerLoader.item.showParametersPanel()
     }
-
     function showKnownVehicleComponentConfigPage(knownVehicleComponent) {
         showVehicleConfig()
         let vehicleComponent = globals.activeVehicle.autopilotPlugin.findKnownVehicleComponent(knownVehicleComponent)
@@ -165,45 +141,35 @@ ApplicationWindow {
             toolDrawerLoader.item.showVehicleComponentPanel(vehicleComponent)
         }
     }
-
     function showSettingsTool(settingsPage = "") {
         showTool(qsTr("Application Settings"), "qrc:/qml/QGroundControl/Controls/AppSettings.qml", "/res/QGCLogoWhite")
         if (settingsPage !== "") {
             toolDrawerLoader.item.showSettingsPage(settingsPage)
         }
     }
-
     //-------------------------------------------------------------------------
     //-- Global simple message dialog
-
     function _showMessageDialogWorker(owner, dialogTitle, dialogText, buttons = Dialog.Ok, acceptFunction = null, closeFunction = null, bypassNavigationCheck = false) {
         let dialog = simpleMessageDialogComponent.createObject(owner, { title: dialogTitle, text: dialogText, buttons: buttons, acceptFunction: acceptFunction, closeFunction: closeFunction, bypassNavigationCheck: bypassNavigationCheck })
         dialog.open()
     }
-
     // This variant is only meant to be called by QGCApplication
     function _showMessageDialog(dialogTitle, dialogText) {
         _showMessageDialogWorker(mainWindow, dialogTitle, dialogText)
     }
-
     Connections {
         target: QGroundControl
-
         function onShowMessageDialogRequested(owner, title, text, buttons, acceptFunction, closeFunction) {
             _showMessageDialogWorker(owner, title, text, buttons, acceptFunction, closeFunction)
         }
     }
-
     Component {
         id: simpleMessageDialogComponent
-
         QGCSimpleMessageDialog {
         }
     }
-
     property bool _forceClose: false
     property bool suppressCriticalVehicleMessages: false
-
     function finishCloseProcess() {
         _forceClose = true
         // For some reason on the Qml side Qt doesn't automatically disconnect a signal when an object is destroyed.
@@ -213,7 +179,6 @@ ApplicationWindow {
         QGroundControl.videoManager.stopVideo();
         mainWindow.close()
     }
-
     // Check for things which should prevent the app from closing
     //  Returns true if it is OK to close
     readonly property int _skipUnsavedMissionCheckMask: 0x01
@@ -234,7 +199,6 @@ ApplicationWindow {
         finishCloseProcess()
         return true
     }
-
     function checkForUnsavedMission() {
         if (planView._planMasterController.dirtyForSave || planView._planMasterController.dirtyForUpload) {
             let accepted = false
@@ -250,7 +214,6 @@ ApplicationWindow {
             return true
         }
     }
-
     function checkForPendingParameterWrites() {
         for (var index=0; index<QGroundControl.multiVehicleManager.vehicles.count; index++) {
             if (QGroundControl.multiVehicleManager.vehicles.get(index).parameterManager.pendingWrites) {
@@ -267,7 +230,6 @@ ApplicationWindow {
         }
         return true
     }
-
     function checkForActiveConnections() {
         if (QGroundControl.multiVehicleManager.activeVehicle) {
             let accepted = false
@@ -283,7 +245,6 @@ ApplicationWindow {
             return true
         }
     }
-
     onClosing: (close) => {
         if (!_forceClose) {
             if (_reentrantCloseGuard) {
@@ -294,36 +255,203 @@ ApplicationWindow {
             close.accepted = performCloseChecks()
         }
     }
-
     background: Rectangle {
         anchors.fill:   parent
         color:          QGroundControl.globalPalette.window
     }
+    // ── TTS GROUP: شعار الزاوية العلوية اليسرى (يملأ الفراغ فوق السايدبار) ──
+    Rectangle {
+        id:             sidebarLogoCorner
+        objectName:     "ttsSidebarLogoCorner"
+        anchors.left:   parent.left
+        anchors.top:    parent.top
+        width:          mainWindow._sidebarWidth
+        height:         ScreenTools.toolbarHeight
+        color:          "#111518"
+        z:              1001
+        Rectangle {
+            anchors.right:  parent.right
+            anchors.top:    parent.top
+            anchors.bottom: parent.bottom
+            width:          1
+            color:          "#1E2830"
+        }
+        Rectangle {
+            anchors.bottom: parent.bottom
+            anchors.left:   parent.left
+            anchors.right:  parent.right
+            height:         1
+            color:          "#2E4050"
+        }
 
+        Image {
+                    id: sidebarLogoImg
+                    anchors.centerIn: parent
+                    width:  Math.min(parent.width, parent.height) * 0.68
+                    height: width
+                    source: "qrc:/res/tts_logo.png"
+                    fillMode: Image.PreserveAspectFit
+                    smooth: true
+                    mipmap: true
+                    sourceSize.width:  width  * 2
+                    sourceSize.height: height * 2
+                }
+
+
+    }
+    // ── TTS GROUP: permanent left sidebar ───────────────────────────────────
+    // Always-visible vertical navigation bar. Replaces the need to open the
+    // hamburger dropdown for normal navigation (dropdown still works too).
+    Rectangle {
+        id:                 permanentSidebar
+        objectName:         "ttsPermanentSidebar"
+        anchors.left:       parent.left
+        anchors.top:        parent.top
+        anchors.topMargin:  ScreenTools.toolbarHeight
+        anchors.bottom:     parent.bottom
+        width:              mainWindow._sidebarWidth
+        color:              "#111518"
+        z:                  1000
+        Rectangle {
+            anchors.top:    parent.top
+            anchors.right:  parent.right
+            anchors.bottom: parent.bottom
+            width:          1
+            color:          "#1E2830"
+        }
+        ColumnLayout {
+            anchors.fill:       parent
+            anchors.topMargin:  ScreenTools.defaultFontPixelHeight * 0.5
+            anchors.bottomMargin: ScreenTools.defaultFontPixelHeight * 0.5
+            spacing:            ScreenTools.defaultFontPixelHeight * 0.3
+            component SidebarNavButton: Item {
+                id:                     navBtn
+                Layout.fillWidth:       true
+                Layout.preferredHeight: mainWindow._sidebarWidth * 1.15
+                property alias text:           navLabel.text
+                property alias imageResource:  navIcon.source
+                property bool  visible2:       true
+                signal clicked
+                Rectangle {
+                    anchors.fill:   parent
+                    color:          navMouseArea.containsMouse ? "#1E2830" : "transparent"
+                    radius:         2
+                }
+                ColumnLayout {
+                    anchors.centerIn: parent
+                    spacing:          ScreenTools.defaultFontPixelHeight * 0.15
+                    Image {
+                        id:                 navIcon
+                        Layout.alignment:   Qt.AlignHCenter
+                        sourceSize.width:   ScreenTools.defaultFontPixelHeight * 1.3
+                        sourceSize.height:  ScreenTools.defaultFontPixelHeight * 1.3
+                        fillMode:           Image.PreserveAspectFit
+                    }
+                    QGCLabel {
+                        id:                 navLabel
+                        Layout.alignment:   Qt.AlignHCenter
+                        font.pointSize:     ScreenTools.smallFontPointSize
+                    }
+                }
+                MouseArea {
+                    id:             navMouseArea
+                    anchors.fill:   parent
+                    hoverEnabled:   true
+                    onClicked:      navBtn.clicked()
+                }
+            }
+            SidebarNavButton {
+                objectName:         "sidebar_viewFly"
+                text:               qsTr("Fly")
+                imageResource:      "/res/FlyingPaperPlane.svg"
+                onClicked: {
+                    if (mainWindow.allowViewSwitch()) {
+                        mainWindow.showFlyView()
+                    }
+                }
+            }
+            SidebarNavButton {
+                objectName:         "sidebar_viewPlan"
+                text:               qsTr("Plan")
+                imageResource:      "/qmlimages/Plan.svg"
+                onClicked: {
+                    if (mainWindow.allowViewSwitch()) {
+                        mainWindow.showPlanView()
+                    }
+                }
+            }
+            SidebarNavButton {
+                objectName:         "sidebar_viewAnalyze"
+                text:               qsTr("Analyze")
+                imageResource:      "/qmlimages/Analyze.svg"
+                visible:            false
+                onClicked: {
+                    if (mainWindow.allowViewSwitch()) {
+                        mainWindow.showAnalyzeTool()
+                    }
+                }
+            }
+            SidebarNavButton {
+                objectName:         "sidebar_viewConfigure"
+                text:               qsTr("Configure")
+                imageResource:      "/res/GearWithPaperPlane.svg"
+                visible:            false
+                onClicked: {
+                    if (mainWindow.allowViewSwitch()) {
+                        mainWindow.showVehicleConfig()
+                    }
+                }
+            }
+            SidebarNavButton {
+                objectName:         "sidebar_viewSettings"
+                text:               qsTr("Settings")
+                imageResource:      "/res/QGCLogoWhite.svg"
+                visible:            !QGroundControl.corePlugin.options.combineSettingsAndSetup
+                onClicked: {
+                    if (mainWindow.allowViewSwitch()) {
+                        mainWindow.showSettingsTool()
+                    }
+                }
+            }
+            Item { Layout.fillHeight: true } // spacer pushes Close to the bottom
+            SidebarNavButton {
+                objectName:         "sidebar_viewClose"
+                text:               qsTr("Close")
+                imageResource:      "/res/OpenDoor.svg"
+                onClicked: {
+                    if (mainWindow.allowViewSwitch()) {
+                        mainWindow.close()
+                    }
+                }
+            }
+        }
+    }
     FlyView {
         id:                     flyView
         objectName:             "mainView_fly"
-        anchors.fill:           parent
+        anchors.left:           permanentSidebar.right
+        anchors.right:          parent.right
+        anchors.top:            parent.top
+        anchors.bottom:         parent.bottom
     }
-
     PlanView {
         id:             planView
         objectName:     "mainView_plan"
-        anchors.fill:   parent
+        anchors.left:   permanentSidebar.right
+        anchors.right:  parent.right
+        anchors.top:    parent.top
+        anchors.bottom: parent.bottom
         visible:        false
     }
-
     footer: LogReplayStatusBar {
         visible: QGroundControl.settingsManager.flyViewSettings.showLogReplayStatusBar.rawValue
     }
-
     MessageDialog {
         id:                 showTouchAreasNotification
         title:              qsTr("Debug Touch Areas")
         text:               qsTr("Touch Area display toggled")
         buttons:            MessageDialog.Ok
     }
-
     MessageDialog {
         id:                 advancedModeOnConfirmation
         title:              qsTr("Advanced Mode")
@@ -335,7 +463,6 @@ ApplicationWindow {
             }
         }
     }
-
     MessageDialog {
         id:                 advancedModeOffConfirmation
         title:              qsTr("Advanced Mode")
@@ -347,13 +474,11 @@ ApplicationWindow {
             }
         }
     }
-
     function showToolSelectDialog() {
         if (mainWindow.allowViewSwitch()) {
             mainWindow.showIndicatorDrawer(toolSelectComponent, null)
         }
     }
-
     // Toast notification shown when a view switch is blocked by a validation error
     ToolTip {
         id:             validationErrorToast
@@ -362,48 +487,42 @@ ApplicationWindow {
         timeout:        3000
         closePolicy:    Popup.NoAutoClose
         text:           qsTr("Please correct the invalid value before continuing")
-
         background: Rectangle {
             color:  qgcPal.alertBackground
             radius: ScreenTools.defaultFontPixelWidth / 2
         }
-
         contentItem: QGCLabel {
             text:   validationErrorToast.text
             color:  qgcPal.alertText
         }
     }
-
     Component {
         id: toolSelectComponent
-
         SelectViewDropdown {
         }
     }
-
     Rectangle {
         id:             toolDrawer
         objectName:     "mainView_toolDrawer"
-        anchors.fill:   parent
+        anchors.left:   permanentSidebar.right
+        anchors.right:  parent.right
+        anchors.top:    parent.top
+        anchors.bottom: parent.bottom
         visible:        false
         color:          qgcPal.window
-
         property var backIcon
         property string toolTitle
         property alias toolSource:  toolDrawerLoader.source
         property var toolIcon
-
         onVisibleChanged: {
             if (!toolDrawer.visible) {
                 toolDrawerLoader.source = ""
             }
         }
-
         // This need to block click event leakage to underlying map.
         DeadMouseArea {
             anchors.fill: parent
         }
-
         Rectangle {
             id:             toolDrawerToolbar
             anchors.left:   parent.left
@@ -411,7 +530,6 @@ ApplicationWindow {
             anchors.top:    parent.top
             height:         ScreenTools.toolbarHeight
             color:          qgcPal.toolbarBackground
-
             RowLayout {
                 id:                 toolDrawerToolbarLayout
                 anchors.leftMargin: ScreenTools.defaultFontPixelWidth
@@ -419,7 +537,6 @@ ApplicationWindow {
                 anchors.top:        parent.top
                 anchors.bottom:     parent.bottom
                 spacing:            ScreenTools.defaultFontPixelWidth
-
                 QGCToolBarButton {
                     id: qgcButton
                     objectName: "toolbar_qgcLogo"
@@ -428,7 +545,6 @@ ApplicationWindow {
                     logo: true
                     onClicked: mainWindow.showToolSelectDialog()
                 }
-
                 QGCLabel {
                     id:             toolbarDrawerText
                     text:           toolDrawer.toolTitle
@@ -436,7 +552,6 @@ ApplicationWindow {
                 }
             }
         }
-
         Loader {
             id:             toolDrawerLoader
             anchors.left:   parent.left
@@ -445,10 +560,8 @@ ApplicationWindow {
             anchors.bottom: parent.bottom
         }
     }
-
     //-------------------------------------------------------------------------
     //-- Critical Vehicle Message Popup
-
     function showCriticalVehicleMessage(message) {
         if (suppressCriticalVehicleMessages) {
             return
@@ -463,7 +576,6 @@ ApplicationWindow {
             criticalVehicleMessagePopup.open()
         }
     }
-
     Popup {
         id:                 criticalVehicleMessagePopup
         y:                  ScreenTools.toolbarHeight + ScreenTools.defaultFontPixelHeight
@@ -472,17 +584,14 @@ ApplicationWindow {
         height:             criticalVehicleMessageText.contentHeight + ScreenTools.defaultFontPixelHeight * 2
         modal:              false
         focus:              true
-
         property alias  criticalVehicleMessage:             criticalVehicleMessageText.text
         property bool   additionalCriticalMessagesReceived: false
-
         background: Rectangle {
             anchors.fill:   parent
             color:          qgcPal.alertBackground
             radius:         ScreenTools.defaultFontPixelHeight * 0.5
             border.color:   qgcPal.alertBorder
             border.width:   2
-
             Rectangle {
                 anchors.horizontalCenter:   parent.horizontalCenter
                 anchors.top:                parent.top
@@ -493,9 +602,7 @@ ApplicationWindow {
                 border.width:               1
                 width:                      vehicleWarningLabel.contentWidth + _margins
                 height:                     vehicleWarningLabel.contentHeight + _margins
-
                 property real _margins: ScreenTools.defaultFontPixelHeight * 0.25
-
                 QGCLabel {
                     id:                 vehicleWarningLabel
                     anchors.centerIn:   parent
@@ -504,7 +611,6 @@ ApplicationWindow {
                     color:              qgcPal.alertText
                 }
             }
-
             Rectangle {
                 id:                         additionalErrorsIndicator
                 anchors.horizontalCenter:   parent.horizontalCenter
@@ -517,9 +623,7 @@ ApplicationWindow {
                 width:                      additionalErrorsLabel.contentWidth + _margins
                 height:                     additionalErrorsLabel.contentHeight + _margins
                 visible:                    criticalVehicleMessagePopup.additionalCriticalMessagesReceived
-
                 property real _margins: ScreenTools.defaultFontPixelHeight * 0.25
-
                 QGCLabel {
                     id:                 additionalErrorsLabel
                     anchors.centerIn:   parent
@@ -529,7 +633,6 @@ ApplicationWindow {
                 }
             }
         }
-
         QGCLabel {
             id:                 criticalVehicleMessageText
             width:              criticalVehicleMessagePopup.width - ScreenTools.defaultFontPixelHeight
@@ -538,7 +641,6 @@ ApplicationWindow {
             color:              qgcPal.alertText
             textFormat:         TextEdit.RichText
         }
-
         MouseArea {
             anchors.fill: parent
             onClicked: {
@@ -552,20 +654,16 @@ ApplicationWindow {
             }
         }
     }
-
     //-------------------------------------------------------------------------
     //-- Indicator Drawer
-
     function showIndicatorDrawer(drawerComponent, indicatorItem) {
         indicatorDrawer.sourceComponent = drawerComponent
         indicatorDrawer.indicatorItem = indicatorItem
         indicatorDrawer.open()
     }
-
     function closeIndicatorDrawer() {
         indicatorDrawer.close()
     }
-
     Popup {
         id:             indicatorDrawer
         x:              calcXPosition()
@@ -579,13 +677,10 @@ ApplicationWindow {
         modal:          true
         focus:          true
         closePolicy:    Popup.CloseOnEscape | Popup.CloseOnPressOutside
-
         property var sourceComponent
         property var indicatorItem
-
         property bool _expanded:    false
         property real _margins:     ScreenTools.defaultFontPixelHeight / 4
-
         function calcXPosition() {
             if (indicatorItem) {
                 var xCenter = indicatorItem.mapToItem(mainWindow.contentItem, indicatorItem.width / 2, 0).x
@@ -594,7 +689,6 @@ ApplicationWindow {
                 return _margins
             }
         }
-
         onOpened: {
             _expanded                               = false;
             indicatorDrawerLoader.sourceComponent   = indicatorDrawer.sourceComponent
@@ -604,7 +698,6 @@ ApplicationWindow {
             indicatorItem                           = undefined
             indicatorDrawerLoader.sourceComponent   = undefined
         }
-
         background: Item {
             Rectangle {
                 id:             backgroundRect
@@ -613,7 +706,6 @@ ApplicationWindow {
                 radius:         indicatorDrawer._margins
                 opacity:        0.85
             }
-
             Rectangle {
                 objectName:                 "indicatorDrawerExpandButton"
                 anchors.horizontalCenter:   backgroundRect.right
@@ -624,37 +716,31 @@ ApplicationWindow {
                 color:                      QGroundControl.globalPalette.button
                 border.color:               QGroundControl.globalPalette.buttonText
                 visible:                    indicatorDrawerLoader.item && indicatorDrawerLoader.item._showExpand && !indicatorDrawer._expanded
-
                 QGCLabel {
                     anchors.centerIn:   parent
                     text:               ">"
                     color:              QGroundControl.globalPalette.buttonText
                 }
-
                 QGCMouseArea {
                     fillItem: parent
                     onClicked: indicatorDrawer._expanded = true
                 }
             }
         }
-
         contentItem: QGCFlickable {
             id:             indicatorDrawerLoaderFlickable
             implicitWidth:  Math.min(mainWindow.contentItem.width - (2 * indicatorDrawer._margins) - (indicatorDrawer.padding * 2), indicatorDrawerLoader.width)
             implicitHeight: Math.min(mainWindow.contentItem.height - ScreenTools.toolbarHeight - (2 * indicatorDrawer._margins) - (indicatorDrawer.padding * 2), indicatorDrawerLoader.height)
             contentWidth:   indicatorDrawerLoader.width
             contentHeight:  indicatorDrawerLoader.height
-
             Loader {
                 id:         indicatorDrawerLoader
                 objectName: "indicatorDrawerLoader"
-
                 Binding {
                     target:     indicatorDrawerLoader.item
                     property:   "expanded"
                     value:      indicatorDrawer._expanded
                 }
-
                 Binding {
                     target:     indicatorDrawerLoader.item
                     property:   "drawer"
@@ -663,15 +749,12 @@ ApplicationWindow {
             }
         }
     }
-
     // Analyze page items (both in-panel and popped-out windows) are created with mainWindow as their
     // QObject parent so their lifetime is not tied to AnalyzeView. This lets a popped-out window
     // survive AnalyzeView being unloaded from the tool drawer.
-
     // Tracks the analyze page item currently shown inside AnalyzeView's panel (not popped out).
     // null when no page is loaded or the item has been handed off to a popup window.
     property var _inPanelAnalyzePage: null
-
     // Called by AnalyzeView.Component.onDestruction to destroy the in-panel item while
     // panelContainer is still alive.
     function destroyInPanelAnalyzePage() {
@@ -680,7 +763,6 @@ ApplicationWindow {
             _inPanelAnalyzePage = null
         }
     }
-
     // Called by AnalyzeView to create an analyze page item owned by mainWindow.
     // The caller sets the visual parent to panelContainer after creation.
     function createAnalyzePage(source) {
@@ -696,14 +778,12 @@ ApplicationWindow {
         _inPanelAnalyzePage = component.createObject(mainWindow)
         return _inPanelAnalyzePage
     }
-
     // Called by AnalyzeView when the in-panel item is handed off to a popup window.
     // Clears _inPanelAnalyzePage so destroyInPanelAnalyzePage() does not destroy it
     // when AnalyzeView is torn down.
     function analyzePageMovedToPopup() {
         _inPanelAnalyzePage = null
     }
-
     function createWindowedAnalyzePage(title, source, requiresVehicle, existingItem) {
         var windowedPage = windowedAnalyzePage.createObject(mainWindow)
         windowedPage.title = title
@@ -715,18 +795,14 @@ ApplicationWindow {
         }
         windowedPage.visible = true
     }
-
     Component {
         id: windowedAnalyzePage
-
         Window {
             width:      ScreenTools.defaultFontPixelWidth  * 100
             height:     ScreenTools.defaultFontPixelHeight * 40
             visible:    false
-
             property alias source: loader.source
             property bool requiresVehicle: false
-
             function adoptItem(item) {
                 loader.visible = false
                 loader.source = ""
@@ -735,7 +811,6 @@ ApplicationWindow {
                 item.popped = true
                 item.visible = true
             }
-
             Connections {
                 target: QGroundControl.multiVehicleManager
                 function onActiveVehicleChanged() {
@@ -744,19 +819,16 @@ ApplicationWindow {
                     }
                 }
             }
-
             Rectangle {
                 id:             contentRect
                 color:          QGroundControl.globalPalette.window
                 anchors.fill:   parent
-
                 Loader {
                     id:             loader
                     anchors.fill:   parent
                     onLoaded:       item.popped = true
                 }
             }
-
             onClosing: {
                 visible = false
                 // Destroy any reparented children (not owned by loader)

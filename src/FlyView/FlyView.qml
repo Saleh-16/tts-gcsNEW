@@ -2,35 +2,28 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Dialogs
 import QtQuick.Layouts
-
 import QtLocation
 import QtPositioning
 import QtQuick.Window
 import QtQml.Models
-
 import QGroundControl
 import QGroundControl.Controls
 import QGroundControl.FlyView
 import QGroundControl.FlightMap
 import QGroundControl.Toolbar
 import QGroundControl.Viewer3D
-
 Item {
     id: _root
-
     readonly property bool _is3DMode:       QGCViewer3DManager.displayMode === QGCViewer3DManager.View3D
     readonly property bool _keepSceneAlive: QGroundControl.settingsManager.viewer3DSettings.keepSceneAlive.rawValue
-
     // These should only be used by MainRootWindow
     property var planController:    _planController
     property var guidedController:  _guidedController
-
     PlanMasterController {
         id:                     _planController
         flyView:                true
         Component.onCompleted:  start()
     }
-
     property bool   _mainWindowIsMap:       mapControl.pipState.state === mapControl.pipState.fullState
     property bool   _isFullWindowItemDark:  _mainWindowIsMap ? mapControl.isSatelliteMap : true
     property var    _activeVehicle:         QGroundControl.multiVehicleManager.activeVehicle
@@ -46,19 +39,20 @@ Item {
     property real   _rightPanelWidth:       ScreenTools.defaultFontPixelWidth * 30
     property var    _mapControl:            mapControl
     property real   _widgetMargin:          ScreenTools.defaultFontPixelWidth * 0.75
-
     property real   _fullItemZorder:    0
     property real   _pipItemZorder:     QGroundControl.zOrderWidgets
-
+    // ── نسب متطابقة تماماً مع botPanH / botBarH في FlyViewCustomLayer.qml ──
+    // بدل الأرقام الثابتة (450, 90) — تضمن تطابق خريطة QGC الحقيقية
+    // مع منطقة mapPanel الشفافة على أي حجم شاشة
+    readonly property real _botPanHRatio: 0.42
+    readonly property real _botBarHRatio: 0.09
     function _calcCenterViewPort() {
         var newToolInset = Qt.rect(0, 0, width, height)
         toolstrip.adjustToolInset(newToolInset)
     }
-
     function dropMainStatusIndicatorTool() {
         toolbar.dropMainStatusIndicatorTool();
     }
-
     QGCToolInsets {
         id:                     _toolInsets
         topEdgeLeftInset:       toolbar.height
@@ -67,19 +61,18 @@ Item {
         leftEdgeBottomInset:    _pipView.leftEdgeBottomInset
         bottomEdgeLeftInset:    _pipView.bottomEdgeLeftInset
     }
-
     Item {
         id:                 mapHolder
         anchors.fill:       parent
-
         FlyViewMap {
             id:                     mapControl
             anchors.left:           parent.left
             anchors.right:          parent.right
             anchors.bottom:         parent.bottom
             anchors.top:            parent.top
-            anchors.topMargin:      _root.height - 300 - 90
-            anchors.bottomMargin:   90
+            // ── نسب متطابقة مع FlyViewCustomLayer.qml (بدل الأرقام الثابتة 450/90) ──
+            anchors.topMargin:      _root.height * (1 - _root._botPanHRatio - _root._botBarHRatio)
+            anchors.bottomMargin:   _root.height * _root._botBarHRatio
             anchors.rightMargin:    _root.width * 0.50
             planMasterController:   _planController
             rightPanelWidth:        ScreenTools.defaultFontPixelHeight * 9
@@ -90,12 +83,10 @@ Item {
             enabled:                !_is3DMode
             visible:                !_is3DMode
         }
-
         FlyViewVideo {
             id:         videoControl
             pipView:    _pipView
         }
-
         PipView {
             id:                     _pipView
             anchors.left:           parent.left
@@ -107,11 +98,9 @@ Item {
             show:                   QGroundControl.videoManager.hasVideo && !QGroundControl.videoManager.fullScreen &&
                                         (videoControl.pipState.state === videoControl.pipState.pipState || mapControl.pipState.state === mapControl.pipState.pipState)
             z:                      QGroundControl.zOrderWidgets
-
             property real leftEdgeBottomInset: visible ? width + anchors.margins : 0
             property real bottomEdgeLeftInset: visible ? height + anchors.margins : 0
         }
-
         FlyViewWidgetLayer {
             id:                     widgetLayer
             anchors.top:            parent.top
@@ -125,16 +114,14 @@ Item {
             mapControl:             _mapControl
             visible:                !QGroundControl.videoManager.fullScreen
         }
-
         FlyViewCustomLayer {
             id:                 customOverlay
             anchors.fill:       mapHolder
-            z:                  _fullItemZorder + 2
+            z:                  _fullItemZorder + 1
             parentToolInsets:   widgetLayer.totalToolInsets
             mapControl:         _mapControl
             visible:            !QGroundControl.videoManager.fullScreen
         }
-
         // Development tool for visualizing the insets for a paticular layer, show if needed
         FlyViewInsetViewer {
             id:                     widgetLayerInsetViewer
@@ -146,13 +133,11 @@ Item {
             insetsToView:           widgetLayer.totalToolInsets
             visible:                false
         }
-
         GuidedActionsController {
             id:                 guidedActionsController
             missionController:  _missionController
             guidedValueSlider:     _guidedValueSlider
         }
-
         //-- Guided value slider (e.g. altitude)
         GuidedValueSlider {
             id:                 guidedValueSlider
@@ -163,14 +148,12 @@ Item {
             z:                  QGroundControl.zOrderTopMost
             visible:            false
         }
-
         Loader {
             id:           viewer3DLoader
             z:            1
             anchors.fill: parent
             visible:      _is3DMode
         }
-
         Connections {
             target: QGCViewer3DManager
             function onDisplayModeChanged() {
@@ -187,7 +170,6 @@ Item {
             }
         }
     }
-
     FlyViewToolBar {
         id:                 toolbar
         guidedValueSlider:  _guidedValueSlider
