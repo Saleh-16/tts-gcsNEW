@@ -49,7 +49,7 @@ jobs:
       fail-fast: false
       matrix:
         build_type: ['${{ inputs.build_type || ''Release'' }}']
-        variant: [amd64, arm64, arm64-cross]
+        variant: [amd64, arm64]
         include:
           - variant: amd64
             runs_on: ${{ github.repository_owner == 'mavlink' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && format('runs-on={0}/family=c8i.2xlarge/image=windows22-full-x64/spot=false/extras=s3-cache/volume=100gb', github.run_id) || 'windows-2022' }}
