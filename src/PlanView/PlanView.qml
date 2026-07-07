@@ -407,6 +407,92 @@ Item {
 
         }
 
+        // ══ TTS ZOOM CONTROL (+/-) — floating zoom buttons over the plan map ══
+        //     Sibling of editorMap (same mainPlanViewArea container). Anchored to
+        //     the map's bottom-right, but:
+        //       • pushed LEFT by editorMap._rightToolWidth so it never hides behind
+        //         the right-hand Plan panel, and
+        //       • pushed UP by missionStatus.height whenever the elevation-profile /
+        //         mission-stats strip is showing, so it never overlaps that chart
+        //         (drops back to the bottom automatically when the strip is hidden).
+        //     Acts on editorMap.zoomLevel (standard QtLocation Map property — the map
+        //     auto-clamps to its own min/max, so no manual bounds maths is needed).
+        //     Each half has its OWN MouseArea, so only taps on + / - are captured and
+        //     the rest of the map still pans/zooms normally underneath.
+        //     Sizes use ScreenTools so it scales with the rest of QGC; the neon theme
+        //     (#00FF88 / #00CC6A on #0A0C0E) matches the TTS Fly-view zoom control.
+        Rectangle {
+            id:                   ttsPlanZoom
+            z:                    QGroundControl.zOrderWidgets
+            anchors.right:        editorMap.right
+            anchors.bottom:       editorMap.bottom
+            anchors.rightMargin:  editorMap._rightToolWidth + _toolsMargin
+            anchors.bottomMargin: (missionStatus.visible ? missionStatus.height + _toolsMargin : _toolsMargin)
+            width:  ScreenTools.defaultFontPixelWidth * 4
+            height: ScreenTools.defaultFontPixelWidth * 8
+            radius: ScreenTools.defaultFontPixelWidth * 0.4
+            color:  Qt.rgba(0, 0, 0, 0.55)
+            border.color: "#00CC6A"
+            border.width: 1
+
+            // ── + (Zoom In) — top half ──────────────────────────────────
+            Rectangle {
+                anchors.top: parent.top; anchors.left: parent.left; anchors.right: parent.right
+                anchors.margins: 1
+                height: parent.height / 2 - 1
+                // Hover / press feedback
+                color: ttsZoomInMA.pressed      ? "#00CC6A"
+                     : ttsZoomInMA.containsMouse ? Qt.rgba(0, 1, 0.53, 0.15)
+                     : "transparent"
+                Behavior on color { ColorAnimation { duration: 120 } }
+                Text {
+                    anchors.centerIn: parent
+                    text: "+"
+                    font.pixelSize: ScreenTools.defaultFontPixelWidth * 2.6; font.bold: true; font.family: "monospace"
+                    color: ttsZoomInMA.pressed ? "#0A0C0E" : "#00FF88"
+                }
+                MouseArea {
+                    id: ttsZoomInMA
+                    anchors.fill: parent; hoverEnabled: true
+                    // Map auto-clamps to maximumZoomLevel
+                    onClicked: editorMap.zoomLevel = editorMap.zoomLevel + 1
+                }
+            }
+
+            // ── Divider between + and − ─────────────────────────────────
+            Rectangle {
+                anchors.verticalCenter: parent.verticalCenter
+                anchors.left: parent.left; anchors.right: parent.right
+                anchors.leftMargin: 1; anchors.rightMargin: 1
+                height: 1; color: "#00CC6A"
+            }
+
+            // ── − (Zoom Out) — bottom half ──────────────────────────────
+            Rectangle {
+                anchors.bottom: parent.bottom; anchors.left: parent.left; anchors.right: parent.right
+                anchors.margins: 1
+                height: parent.height / 2 - 1
+                // Hover / press feedback
+                color: ttsZoomOutMA.pressed      ? "#00CC6A"
+                     : ttsZoomOutMA.containsMouse ? Qt.rgba(0, 1, 0.53, 0.15)
+                     : "transparent"
+                Behavior on color { ColorAnimation { duration: 120 } }
+                Text {
+                    anchors.centerIn: parent
+                    text: "\u2212"   // real minus sign (−), not a hyphen
+                    font.pixelSize: ScreenTools.defaultFontPixelWidth * 2.6; font.bold: true; font.family: "monospace"
+                    color: ttsZoomOutMA.pressed ? "#0A0C0E" : "#00FF88"
+                }
+                MouseArea {
+                    id: ttsZoomOutMA
+                    anchors.fill: parent; hoverEnabled: true
+                    // Map auto-clamps to minimumZoomLevel
+                    onClicked: editorMap.zoomLevel = editorMap.zoomLevel - 1
+                }
+            }
+        }
+        // ══ END TTS ZOOM CONTROL ═════════════════════════════════════════
+
         //-----------------------------------------------------------
         // Left tool strip
         ToolStrip {

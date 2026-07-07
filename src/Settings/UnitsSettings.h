@@ -14,7 +14,9 @@ public:
 
     enum HorizontalDistanceUnits {
         HorizontalDistanceUnitsFeet = 0,
-        HorizontalDistanceUnitsMeters
+        HorizontalDistanceUnitsMeters,
+        HorizontalDistanceUnitsKilometers,
+        HorizontalDistanceUnitsNauticalMiles
     };
 
     enum VerticalDistanceUnits {
@@ -35,6 +37,7 @@ public:
         SpeedUnitsFeetPerSecond = 0,
         SpeedUnitsMetersPerSecond,
         SpeedUnitsMilesPerHour,
+       // SpeedUnitsKilometersPerSecond,
         SpeedUnitsKilometersPerHour,
         SpeedUnitsKnots,
     };

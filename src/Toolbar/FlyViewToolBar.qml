@@ -256,7 +256,7 @@ Item {
                             Rectangle {
                                 anchors.bottom: parent.bottom
                                 width: parent.width; height: 1
-                                color: root.cBorder
+                                color: control.cBorder
                                 visible: index < (control._activeVehicle.flightModes.length - 1)
                             }
                         }
@@ -269,9 +269,7 @@ Item {
         Item {
             id: gpsSection
             Layout.preferredWidth: control._u * 14.8; Layout.fillHeight: true
-
             property bool _showGpsPopup: false
-
             function gpsErrorText() {
                 if (!control._activeVehicle) return ""
                 var v = control._activeVehicle.gps.systemErrors.value
@@ -287,7 +285,6 @@ Item {
                     default: return "Multiple errors"
                 }
             }
-
             Column {
                 anchors.verticalCenter: parent.verticalCenter
                 anchors.left: parent.left; anchors.leftMargin: control._u * 1.4
@@ -317,12 +314,10 @@ Item {
                     }
                 }
             }
-
             MouseArea {
                 anchors.fill: parent
                 onClicked: gpsSection._showGpsPopup = !gpsSection._showGpsPopup
             }
-
             // ── Vehicle GPS Status Popup ──
             Rectangle {
                 id: gpsPopup
@@ -337,9 +332,7 @@ Item {
                 border.color: control.cBorderHi
                 border.width: 1
                 radius: control._u * 0.4
-
                 property string _na: "\u2013.\u2013\u2013"
-
                 Column {
                     id: gpsPopupCol
                     anchors.left: parent.left
@@ -347,7 +340,6 @@ Item {
                     anchors.top: parent.top
                     anchors.margins: control._u * 1.2
                     spacing: 0
-
                     Text {
                         text: "Vehicle GPS Status"
                         font.pixelSize: control._u * 1.2; font.bold: true; font.family: "monospace"
@@ -355,41 +347,35 @@ Item {
                         bottomPadding: control._u * 0.8
                     }
                     Rectangle { width: parent.width; height: 1; color: control.cBorder }
-
                     Item {
                         width: parent.width; height: control._u * 2.8
                         Text { text: "Satellites"; font.pixelSize: control._u * 1.1; font.family:"monospace"; color:control.cGrey; anchors.verticalCenter:parent.verticalCenter }
                         Text { text: control._connected ? control._activeVehicle.gps.count.valueString : "--"; font.pixelSize: control._u * 1.1; font.bold:true; font.family:"monospace"; color:control.cWhite; anchors.verticalCenter:parent.verticalCenter; anchors.right:parent.right }
                     }
                     Rectangle { width: parent.width; height: 1; color: control.cBorder }
-
                     Item {
                         width: parent.width; height: control._u * 2.8
                         Text { text: "GPS Lock"; font.pixelSize: control._u * 1.1; font.family:"monospace"; color:control.cGrey; anchors.verticalCenter:parent.verticalCenter }
                         Text { text: control._connected ? control._activeVehicle.gps.lock.enumStringValue : "--"; font.pixelSize: control._u * 1.1; font.bold:true; font.family:"monospace"; color:control.cWhite; anchors.verticalCenter:parent.verticalCenter; anchors.right:parent.right }
                     }
                     Rectangle { width: parent.width; height: 1; color: control.cBorder }
-
                     Item {
                         width: parent.width; height: control._u * 2.8
                         Text { text: "HDOP"; font.pixelSize: control._u * 1.1; font.family:"monospace"; color:control.cGrey; anchors.verticalCenter:parent.verticalCenter }
                         Text { text: control._connected ? control._activeVehicle.gps.hdop.valueString : gpsPopup._na; font.pixelSize: control._u * 1.1; font.bold:true; font.family:"monospace"; color:control.cWhite; anchors.verticalCenter:parent.verticalCenter; anchors.right:parent.right }
                     }
                     Rectangle { width: parent.width; height: 1; color: control.cBorder }
-
                     Item {
                         width: parent.width; height: control._u * 2.8
                         Text { text: "VDOP"; font.pixelSize: control._u * 1.1; font.family:"monospace"; color:control.cGrey; anchors.verticalCenter:parent.verticalCenter }
                         Text { text: control._connected ? control._activeVehicle.gps.vdop.valueString : gpsPopup._na; font.pixelSize: control._u * 1.1; font.bold:true; font.family:"monospace"; color:control.cWhite; anchors.verticalCenter:parent.verticalCenter; anchors.right:parent.right }
                     }
                     Rectangle { width: parent.width; height: 1; color: control.cBorder }
-
                     Item {
                         width: parent.width; height: control._u * 2.8
                         Text { text: "Course Over Ground"; font.pixelSize: control._u * 1.1; font.family:"monospace"; color:control.cGrey; anchors.verticalCenter:parent.verticalCenter }
                         Text { text: control._connected ? control._activeVehicle.gps.courseOverGround.valueString : gpsPopup._na; font.pixelSize: control._u * 1.1; font.bold:true; font.family:"monospace"; color:control.cWhite; anchors.verticalCenter:parent.verticalCenter; anchors.right:parent.right }
                     }
-
                     Rectangle {
                         width: parent.width; height: 1; color: control.cBorder
                         visible: control._connected && control._activeVehicle.gps.systemErrors.value > 0

@@ -341,7 +341,7 @@ void Vehicle::_commonInit(LinkInterface* link)
     _createSigningController();
     _createMAVLinkEventManager();
 
-    // _addFactGroup(_vehicleFactGroup,            _vehicleFactGroupName);
+    _addFactGroup(_vehicleFactGroup,            _vehicleFactGroupName);
     _addFactGroup(_gpsFactGroup,               _gpsFactGroupName);
     _addFactGroup(_gps2FactGroup,              _gps2FactGroupName);
     _addFactGroup(_gpsAggregateFactGroup,      _gpsAggregateFactGroupName);

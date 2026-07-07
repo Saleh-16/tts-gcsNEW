@@ -385,7 +385,7 @@ RowLayout {
             spacing:                margins / 2
 
             property real margins: ScreenTools.defaultFontPixelHeight
-
+            property color _mainStatusBGColor: qgcPal.window
             Loader {
                 Layout.fillWidth:   true
                 source:             _activeVehicle.expandedToolbarIndicatorSource("MainStatus")

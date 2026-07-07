@@ -188,8 +188,8 @@
         {
             "id":                   21,
             "rawName":              "MAV_CMD_NAV_LAND",
-            "friendlyName":         "Land",
-            "description":          "Land vehicle at the specified location.",
+            "friendlyName":         "Target",
+            "description":          "Send the vehicle to the target point.",
             "specifiesCoordinate":  true,
             "isLandCommand":        true,
             "friendlyEdit":         true,
