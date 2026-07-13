@@ -37,7 +37,7 @@ public:
         SpeedUnitsFeetPerSecond = 0,
         SpeedUnitsMetersPerSecond,
         SpeedUnitsMilesPerHour,
-       // SpeedUnitsKilometersPerSecond,
+       SpeedUnitsKilometersPerSecond,
         SpeedUnitsKilometersPerHour,
         SpeedUnitsKnots,
     };

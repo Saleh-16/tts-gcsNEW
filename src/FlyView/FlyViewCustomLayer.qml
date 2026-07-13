@@ -133,6 +133,12 @@ Item {
     // ── Remaining display-unit labels (speed / wind / voltage) ──────────────
     property string _unitSpd:    _factAir ? _factAir.units : qsTr("m/s")
     property string _unitGndSpd: _factGnd ? _factGnd.units : qsTr("m/s")
+
+    // ── Speed display adaptation (km/s needs smaller steps + more decimals) ──
+    property bool   _isSmallSpeedUnit: _unitSpd === "km/s"
+    property real   _spdStep:          _isSmallSpeedUnit ? 0.005 : 20
+    property int    _spdDecimals:      _isSmallSpeedUnit ? 3 : 0
+    property int    _gndSpdDecimals:   (_unitGndSpd === "km/s") ? 3 : 1
     property string _unitVolt:   _bat0 && _bat0.voltage ? _bat0.voltage.units : qsTr("V")
     property string _unitWndSpd: _ok ? _v.wind.speed.units  : qsTr("m/s")
     // ── Ground-speed session MAX / MIN tracker (updated on every change) ────
@@ -425,15 +431,15 @@ Item {
                         Column {
                             anchors.horizontalCenter: parent.horizontalCenter
                             anchors.verticalCenter: parent.verticalCenter
-                            anchors.verticalCenterOffset: (root._rawSpd % 20) * spdTape._ts * 0.84
+                            anchors.verticalCenterOffset: (root._dispSpd % root._spdStep) / root._spdStep * spdTape._ts * 0.84
                             spacing: spdTape._ts * 2.8
                             Repeater {
                                 model: 9
                                 delegate: Row {
                                     spacing: spdTape._ts * 0.6
-                                    property real val: ((root._rawSpd/20|0) + 4 - index) * 20
+                                    property real val: (Math.floor(root._dispSpd / root._spdStep) + 4 - index) * root._spdStep
                                     Rectangle { width: spdTape._ts * 1.6; height: Math.max(1, spdTape._ts * 0.2); color: root.cNeon; anchors.verticalCenter:parent.verticalCenter }
-                                    Text { text: Math.max(0, val).toFixed(0); font.bold:true; font.pixelSize: spdTape._ts * 2; font.family:"monospace"; color: root.cWhite }
+                                    Text { text: Math.max(0, val).toFixed(root._spdDecimals); font.bold:true; font.pixelSize: spdTape._ts * 2; font.family:"monospace"; color: root.cWhite }
                                 }
                             }
                         }
@@ -449,7 +455,7 @@ Item {
                         clip: true
                         Text {
                             anchors.centerIn: parent
-                            text: root._spdText
+                            text: root._isSmallSpeedUnit ? root._dispSpd.toFixed(3) : root._spdText
                             font.bold:true; color:root.cBg; font.family:"monospace"
                             width: parent.width - (spdTape._ts * 1.2)
                             fontSizeMode: Text.Fit
@@ -614,7 +620,7 @@ Item {
                         Row {
                             spacing: groundSpeedCard._cs * 0.4
                             Text {
-                                text: root._gndSpdText
+                                text: root._isSmallSpeedUnit ? root._dispGndSpd.toFixed(3) : root._gndSpdText
                                 font.pixelSize: groundSpeedCard._cs * 3.4; font.bold: true
                                 font.family: "monospace"; color: root.cNeon
                             }
@@ -630,13 +636,13 @@ Item {
                         Row {
                             spacing: groundSpeedCard._cs * 0.6
                             Text { text: qsTr("MAX"); font.pixelSize: groundSpeedCard._cs * 1.2; font.family: "monospace"; color: root.cGrey; width: groundSpeedCard._cs * 3.4 }
-                            Text { text: root._spdMax.toFixed(1) + " " + root._unitGndSpd; font.pixelSize: groundSpeedCard._cs * 1.2; font.bold: true; font.family: "monospace"; color: root.cWhite }
+                            Text { text: root._spdMax.toFixed(root._gndSpdDecimals) + " " + root._unitGndSpd; font.pixelSize: groundSpeedCard._cs * 1.2; font.bold: true; font.family: "monospace"; color: root.cWhite }
                         }
                         // Session MIN row
                         Row {
                             spacing: groundSpeedCard._cs * 0.6
                             Text { text: qsTr("MIN"); font.pixelSize: groundSpeedCard._cs * 1.2; font.family: "monospace"; color: root.cGrey; width: groundSpeedCard._cs * 3.4 }
-                            Text { text: root._spdMin.toFixed(1) + " " + root._unitGndSpd; font.pixelSize: groundSpeedCard._cs * 1.2; font.bold: true; font.family: "monospace"; color: root.cWhite }
+                            Text { text: root._spdMin.toFixed(root._gndSpdDecimals) + " " + root._unitGndSpd; font.pixelSize: groundSpeedCard._cs * 1.2; font.bold: true; font.family: "monospace"; color: root.cWhite }
                         }
                     }
                 }

@@ -72,7 +72,7 @@ Item {
         // 1. LOGO
         Rectangle {
             Layout.preferredWidth: control._u * 13.5; Layout.fillHeight: true
-            color: control.cPanel
+            color: control.cBg
             Rectangle {
                 anchors.right: parent.right; anchors.top: parent.top; anchors.bottom: parent.bottom
                 width: 1; color: control.cBorder

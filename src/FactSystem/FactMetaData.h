@@ -291,10 +291,10 @@ private:
     static QVariant _milesPerHourToMetersPerSecond(const QVariant &milesPerHour);
     static QVariant _metersPerSecondToKilometersPerHour(const QVariant &metersPerSecond);
     static QVariant _kilometersPerHourToMetersPerSecond(const QVariant &kilometersPerHour);
-    static QVariant _metersPerSecondToKnots(const QVariant &metersPerSecond);
-    static QVariant _knotsToMetersPerSecond(const QVariant &knots);
     static QVariant _metersPerSecondToKilometersPerSecond(const QVariant &metersPerSecond);
     static QVariant _kilometersPerSecondToMetersPerSecond(const QVariant &kilometersPerSecond);
+    static QVariant _metersPerSecondToKnots(const QVariant &metersPerSecond);
+    static QVariant _knotsToMetersPerSecond(const QVariant &knots);
     static QVariant _percentToNorm(const QVariant &percent);
     static QVariant _normToPercent(const QVariant &normalized);
     static QVariant _centimetersToInches(const QVariant &centimeters);

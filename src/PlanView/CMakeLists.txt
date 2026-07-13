@@ -34,6 +34,9 @@ qt_add_qml_module(PlanViewModule
         PlanTreeView.qml
         PlanView.qml
         PlanViewRightPanel.qml
+        MissionReviewPanel.qml
+        ConstraintResolver.js
+        MissionReviewEngine.js
         RallyPointEditorHeader.qml
         RallyPointItemEditor.qml
         RallyPointMapVisuals.qml

@@ -1,7 +1,6 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
-
 import QGroundControl
 import QGroundControl.Controls
 import QGroundControl.FactControls
@@ -11,6 +10,7 @@ import QGroundControl.PlanView
 /// as collapsible sections using a real TreeView with type-discriminating delegates.
 TreeView {
     id: root
+
     model: _missionController.visualItemsTree
     clip: true
     boundsBehavior: Flickable.StopAtBounds
@@ -27,6 +27,7 @@ TreeView {
     readonly property int _layerMission: 1
     readonly property int _layerFence:   2
     readonly property int _layerRally:   3
+
     readonly property bool _createNewPlanMode: planMasterController.showCreateFromTemplate
 
     on_CreateNewPlanModeChanged: {
@@ -58,8 +59,10 @@ TreeView {
 
     Connections {
         target: root._missionController.visualItems
+
         function onCountChanged() {
             var newCount = _missionController.visualItems ? _missionController.visualItems.count : 0
+
             if (newCount > root._lastMissionItemCount) {
                 // First waypoint added — collapse Plan Info and Defaults
                 if (root._lastMissionItemCount <= 1 && newCount > 1) {
@@ -72,6 +75,7 @@ TreeView {
                         root.collapse(defaultsRow)
                     }
                 }
+
                 // Expand mission group and scroll to the new item
                 var missionRow = _rowFor(_missionController.missionGroupIndex)
                 if (!root.isExpanded(missionRow)) {
@@ -85,20 +89,20 @@ TreeView {
 
     Connections {
         target: root._missionController
+
         function onVisualItemsReset() {
             root.collapseRecursively()
             if (_missionController.containsItems) {
                 // Non-empty plan: expand mission group
                 root.expand(_rowFor(_missionController.missionGroupIndex))
             } else {
-                // Empty plan: expand Plan Info and Defaults, scroll to top
-                root.expand(_rowFor(_missionController.planFileGroupIndex))
-                root.expand(_rowFor(_missionController.defaultsGroupIndex))
+                // Empty plan: all sections stay collapsed — user opens what they need
                 root.contentY = 0
             }
             root._lastMissionItemCount = _missionController.visualItems ? _missionController.visualItems.count : 0
             root.editingLayerChangeRequested(root._layerMission)
         }
+
         function onPlanViewStateChanged() {
             // Current item changed — bring it on-screen if completely off-screen.
             // Fine-tuned scroll happens later via editorExpandedAndLoaded.
@@ -151,6 +155,19 @@ TreeView {
         root.forceLayout()
     }
 
+    // Section number for group headers
+    function _groupNumber(nodeType) {
+        switch (nodeType) {
+        case "planFileGroup":   return "1"
+        case "defaultsGroup":  return "2"
+        case "missionGroup":   return "3"
+        case "fenceGroup":     return "4"
+        case "rallyGroup":     return "5"
+        case "transformGroup": return "6"
+        default:               return ""
+        }
+    }
+
     // Subtitle text shown on group headers, varies by node type
     function _groupSubtitle(nodeType) {
         switch (nodeType) {
@@ -182,6 +199,7 @@ TreeView {
 
     delegate: Item {
         id: delegateRoot
+
         implicitWidth: root.width
         implicitHeight: (loader.item ? loader.item.height : 1) + (separatorLine.visible ? separatorLine.height + root.rowSpacing : 0)
         visible: !root._createNewPlanMode || _visibleInCreateMode
@@ -289,12 +307,14 @@ TreeView {
                     item.clicked.connect(function() {
                         root._missionController.setCurrentPlanViewSeqNum(delegateRoot.nodeObject.sequenceNumber, false)
                     })
+
                     item.remove.connect(function() {
                         var viIndex = root._missionController.visualItemIndexForObject(delegateRoot.nodeObject)
                         if (viIndex > 0) {
                             root._missionController.removeVisualItem(viIndex)
                         }
                     })
+
                     item.selectNextNotReadyItem.connect(function() {
                         for (var i = 0; i < root._missionController.visualItems.count; i++) {
                             var vmi = root._missionController.visualItems.get(i)
@@ -304,6 +324,7 @@ TreeView {
                             }
                         }
                     })
+
                     item.editorExpandedAndLoaded.connect(function() {
                         root._scrollToMissionItem(delegateRoot)
                     })
@@ -341,6 +362,24 @@ TreeView {
                     anchors.right: parent.right
                     anchors.margins: ScreenTools.defaultFontPixelWidth * 0.5
 
+                    // ── Numbered circle ──
+                    Rectangle {
+                        Layout.alignment: Qt.AlignVCenter
+                        Layout.preferredWidth: ScreenTools.defaultFontPixelHeight * 1.0
+                        Layout.preferredHeight: Layout.preferredWidth
+                        radius: width / 2
+                        color: delegateRoot.expanded ? qgcPal.colorGreen : qgcPal.windowShadeDark
+                        Text {
+                            anchors.centerIn: parent
+                            text: root._groupNumber(delegateRoot.nodeType)
+                            font.pixelSize: ScreenTools.defaultFontPixelHeight * 0.5
+                            font.bold: true
+                            font.family: "monospace"
+                            color: delegateRoot.expanded ? "#0A0C0E" : qgcPal.colorGrey
+                        }
+                    }
+
+                    // ── Chevron ──
                     QGCColoredImage {
                         Layout.alignment: Qt.AlignVCenter
                         Layout.preferredWidth: ScreenTools.defaultFontPixelHeight * 0.75
@@ -350,12 +389,14 @@ TreeView {
                         rotation: delegateRoot.expanded ? 90 : 0
                     }
 
+                    // ── Title ──
                     QGCLabel {
                         Layout.alignment: Qt.AlignBaseline
                         text: delegateRoot.nodeObject ? delegateRoot.nodeObject.objectName : ""
                         font.bold: true
                     }
 
+                    // ── Subtitle ──
                     QGCLabel {
                         Layout.alignment: Qt.AlignBaseline
                         Layout.fillWidth: true
@@ -377,6 +418,5 @@ TreeView {
                 }
             }
         }
-
     }
 }

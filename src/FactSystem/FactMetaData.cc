@@ -47,6 +47,7 @@ const FactMetaData::AppSettingsTranslation_s FactMetaData::_rgAppSettingsTransla
     { "m/s",    "ft/s",     FactMetaData::UnitSpeed,                 UnitsSettings::SpeedUnitsFeetPerSecond,       FactMetaData::_metersToFeet,                        FactMetaData::_feetToMeters },
     { "m/s",    "mph",      FactMetaData::UnitSpeed,                 UnitsSettings::SpeedUnitsMilesPerHour,        FactMetaData::_metersPerSecondToMilesPerHour,       FactMetaData::_milesPerHourToMetersPerSecond },
     { "m/s",    "km/h",     FactMetaData::UnitSpeed,                 UnitsSettings::SpeedUnitsKilometersPerHour,   FactMetaData::_metersPerSecondToKilometersPerHour,  FactMetaData::_kilometersPerHourToMetersPerSecond },
+    { "m/s",    "km/s",     FactMetaData::UnitSpeed,                 UnitsSettings::SpeedUnitsKilometersPerSecond,     FactMetaData::_metersPerSecondToKilometersPerSecond,    FactMetaData::_kilometersPerSecondToMetersPerSecond },
     { "m/s",    "kn",       FactMetaData::UnitSpeed,                 UnitsSettings::SpeedUnitsKnots,               FactMetaData::_metersPerSecondToKnots,              FactMetaData::_knotsToMetersPerSecond },
     { "C",      "F",        FactMetaData::UnitTemperature,           UnitsSettings::TemperatureUnitsFarenheit,     FactMetaData::_celsiusToFarenheit,                  FactMetaData::_farenheitToCelsius },
     { "g",      "g",        FactMetaData::UnitWeight,                UnitsSettings::WeightUnitsGrams,              FactMetaData::_defaultTranslator,                   FactMetaData::_defaultTranslator },
@@ -717,6 +718,15 @@ QVariant FactMetaData::_kilometersPerHourToMetersPerSecond(const QVariant &kilom
 {
     return QVariant((kilometersPerHour.toDouble() * 1000.0) / constants.secondsPerHour);
 }
+QVariant FactMetaData::_metersPerSecondToKilometersPerSecond(const QVariant &metersPerSecond)
+{
+    return QVariant(metersPerSecond.toDouble() / 1000.0);
+}
+QVariant FactMetaData::_kilometersPerSecondToMetersPerSecond(const QVariant &kilometersPerSecond)
+{
+    return QVariant(kilometersPerSecond.toDouble() * 1000.0);
+}
+
 QVariant FactMetaData::_metersPerSecondToKnots(const QVariant &metersPerSecond)
 {
     return QVariant((metersPerSecond.toDouble() * constants.secondsPerHour) / (1000.0 * constants.knotsToKPH));
@@ -1447,12 +1457,4 @@ QVariant FactMetaData::cookedUserMax() const
         return QVariant();
     }
     return _rawTranslator(_rawUserMax);
-}
-QVariant FactMetaData::_metersPerSecondToKilometersPerSecond(const QVariant &metersPerSecond)
-{
-    return QVariant(metersPerSecond.toDouble() / 1000.0);
-}
-QVariant FactMetaData::_kilometersPerSecondToMetersPerSecond(const QVariant &kilometersPerSecond)
-{
-    return QVariant(kilometersPerSecond.toDouble() * 1000.0);
 }

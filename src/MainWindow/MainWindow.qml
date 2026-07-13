@@ -267,7 +267,7 @@ ApplicationWindow {
         anchors.top:    parent.top
         width:          mainWindow._sidebarWidth
         height:         ScreenTools.toolbarHeight
-        color:          "#111518"
+        color:          "#0A0C0E"
         z:              1001
         Rectangle {
             anchors.right:  parent.right
@@ -310,7 +310,7 @@ ApplicationWindow {
         anchors.topMargin:  ScreenTools.toolbarHeight
         anchors.bottom:     parent.bottom
         width:              mainWindow._sidebarWidth
-        color:              "#111518"
+        color:              "#0A0C0E"
         z:                  1000
         Rectangle {
             anchors.top:    parent.top

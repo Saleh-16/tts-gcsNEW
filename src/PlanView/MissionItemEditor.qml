@@ -162,7 +162,7 @@ Rectangle {
 
                 property real _padding: ScreenTools.comboBoxPadding
 
-                QGCLabel { text: missionItem.commandName }
+                QGCLabel { text: missionItem.commandName; color: _outerTextColor }
 
                 QGCColoredImage {
                     height:             ScreenTools.defaultFontPixelWidth
