@@ -592,10 +592,11 @@ function _analyzePathPattern(geometryResult) {
 function validate(relationships, structure, limits, points) {
     var findings = []
     _validateClimbAngle(relationships.climbs, findings)
+    _validateWP3Distance(points, structure, findings)
     return findings
 }
 
-// ── SINGLE RULE: Climb/Descent Angle ──
+// ── RULE 1: Climb/Descent Angle ──
 // > 5°  = CRITICAL
 // > 2.5° and <= 5° = WARNING
 // <= 2.5° = PASS
@@ -644,6 +645,42 @@ function _validateClimbAngle(climbs, findings) {
                 [], "All waypoints are at the same altitude.",
                 "No impact — flat mission.",
                 "No action required", ""))
+        }
+    }
+}
+
+// ── RULE 2: WP3 minimum 5 km from Home ──
+function _validateWP3Distance(points, structure, findings) {
+    if (!structure.hasHome || !structure.homeCoordinate) return
+
+    var wp3Point = null
+    for (var k = 0; k < points.length; k++) {
+        if (points[k].displayIndex === 3) {
+            wp3Point = points[k]
+            break
+        }
+    }
+    if (wp3Point && wp3Point.isValid) {
+        var distWP3 = _haversineDistance(
+            structure.homeCoordinate.lat, structure.homeCoordinate.lon,
+            wp3Point.lat, wp3Point.lon
+        )
+        if (distWP3 < 5000) {
+            findings.push(_finding("CRITICAL", "CONSISTENCY",
+                "WP3 too close to Home: " + (distWP3 / 1000).toFixed(1) + " km",
+                [3],
+                "WP3 is " + (distWP3 / 1000).toFixed(1) + " km from Home. Minimum required: 5 km.",
+                "Mission does not meet minimum standoff distance for WP3.",
+                "Move WP3 at least 5 km from Home position",
+                "Mission requirement: WP3 >= 5 km"))
+        } else {
+            findings.push(_finding("NOTICE", "CONSISTENCY",
+                "WP3 distance OK: " + (distWP3 / 1000).toFixed(1) + " km from Home",
+                [3],
+                "WP3 is " + (distWP3 / 1000).toFixed(1) + " km from Home. Minimum required: 5 km. Passed.",
+                "No impact — standoff distance requirement met.",
+                "No action required",
+                "Mission requirement: WP3 >= 5 km"))
         }
     }
 }

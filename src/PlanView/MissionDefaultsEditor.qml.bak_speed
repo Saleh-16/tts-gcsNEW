@@ -98,26 +98,18 @@ Rectangle {
             fact: QGroundControl.settingsManager.appSettings.defaultMissionItemAltitude
         }
 
-        RowLayout {
+        FactTextFieldSlider {
             Layout.fillWidth: true
+            label: qsTr("Flight Speed")
+            fact: _root._settingsItem ? _root._settingsItem.speedSection.flightSpeed : null
+            showEnableCheckbox: true
+            enableCheckBoxChecked: _root._settingsItem ? _root._settingsItem.speedSection.specifyFlightSpeed : false
             visible: _root._settingsItem ? _root._settingsItem.speedSection.available : false
-            spacing: ScreenTools.defaultFontPixelWidth
 
-            QGCCheckBox {
-                text: qsTr("Flight Speed")
-                checked: _root._settingsItem ? _root._settingsItem.speedSection.specifyFlightSpeed : false
-                onClicked: {
-                    if (_root._settingsItem) {
-                        _root._settingsItem.speedSection.specifyFlightSpeed = checked
-                    }
+            onEnableCheckboxClicked: {
+                if (_root._settingsItem) {
+                    _root._settingsItem.speedSection.specifyFlightSpeed = enableCheckBoxChecked
                 }
-            }
-
-            LabelledFactTextField {
-                Layout.fillWidth: true
-                label: ""
-                fact: _root._settingsItem ? _root._settingsItem.speedSection.flightSpeed : null
-                enabled: _root._settingsItem ? _root._settingsItem.speedSection.specifyFlightSpeed : false
             }
         }
 

@@ -835,7 +835,7 @@ void SimpleMissionItem::_setDefaultsForCommand(void)
         _missionItem._param7Fact.setRawValue(defaultAlt);
         // Note that setAltitudeFrame will also set MAV_FRAME correctly through signalling
         // Takeoff items always use relative alt since that is the highest quality data to base altitude from
-        setAltitudeFrame(_missionController->globalAltitudeFrameDefault());
+        setAltitudeFrame(isTakeoffItem() ? QGroundControlQmlGlobal::AltitudeFrameRelative : _missionController->globalAltitudeFrameDefault());
     } else {
         _altitudeFact.setRawValue(0);
         _missionItem._param7Fact.setRawValue(0);

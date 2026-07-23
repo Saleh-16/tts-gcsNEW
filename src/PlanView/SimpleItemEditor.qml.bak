@@ -139,7 +139,7 @@ Rectangle {
                             onAltitudeFrameChanged: missionItem.altitudeFrame = altitudeFrame
                         }
                     }
-                    LabelledFactTextField {
+                    FactTextFieldSlider {
                         id: altField
                         Layout.fillWidth: true
                         label: qsTr("Altitude%1").arg(_extraLabelText())
@@ -198,23 +198,14 @@ Rectangle {
                         onEnableCheckboxClicked: object.rawValue = enableCheckBoxChecked ? 0 : NaN
                     }
                 }
-                RowLayout {
+                FactTextFieldSlider {
                     Layout.fillWidth: true
+                    label: qsTr("Flight Speed")
+                    fact: missionItem.speedSection.flightSpeed
+                    showEnableCheckbox: true
+                    enableCheckBoxChecked: missionItem.speedSection.specifyFlightSpeed
                     visible: missionItem.speedSection.available
-                    spacing: ScreenTools.defaultFontPixelWidth
-
-                    QGCCheckBox {
-                        text: qsTr("Flight Speed")
-                        checked: missionItem.speedSection.specifyFlightSpeed
-                        onClicked: missionItem.speedSection.specifyFlightSpeed = checked
-                    }
-
-                    LabelledFactTextField {
-                        Layout.fillWidth: true
-                        label: ""
-                        fact: missionItem.speedSection.flightSpeed
-                        enabled: missionItem.speedSection.specifyFlightSpeed
-                    }
+                    onEnableCheckboxClicked: missionItem.speedSection.specifyFlightSpeed = enableCheckBoxChecked
                 }
 
                 // ═══════════════════════════════════════════════════════════

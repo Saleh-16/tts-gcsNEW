@@ -660,7 +660,7 @@ Item {
                                         Text { width:parent.width*0.10; text:modelData.alt;  font.pixelSize:9;font.family:"monospace";color:parent.tc }
                                         Rectangle {
                                             width:parent.width*0.13; height:16; anchors.verticalCenter:parent.verticalCenter
-                                            color:"transparent"; border.color:modelData.sc; border.width:1
+                                            color:"transparent"; border.color:modelData.sc; borMissionDefaultsEditor.qmlder.width:1
                                             Text { anchors.centerIn:parent; text:modelData.status; font.pixelSize:7;font.letterSpacing:0.8;font.family:"monospace";color:modelData.sc }
                                         }
                                         Item {

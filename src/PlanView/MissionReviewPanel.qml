@@ -657,8 +657,10 @@ Item {
     function _buildGroupModel() {
         if (!_report) return []
         var angleFindings = _filterFindings("GEOMETRY")
+        var wp3Findings = _filterFindings("CONSISTENCY")
         return [
-            { title: qsTr("Climb / Descent Angle"), badge: _smartBadge(angleFindings), badgeColor: _smartBadgeColor(angleFindings), findings: angleFindings }
+            { title: qsTr("Climb / Descent Angle"), badge: _smartBadge(angleFindings), badgeColor: _smartBadgeColor(angleFindings), findings: angleFindings },
+            { title: qsTr("WP3 Distance from Home"), badge: _smartBadge(wp3Findings), badgeColor: _smartBadgeColor(wp3Findings), findings: wp3Findings }
         ]
     }
 }

@@ -60,27 +60,35 @@ Rectangle {
             buttonText: QGroundControl.altitudeFrameExtraUnits(_root.missionController.globalAltitudeFrame)
 
             onClicked: {
-                // سلوك Mission Planner بالضبط: تبديل الفريم فقط، بدون أي تحويل للأرقام.
-                // الرقم اللي كاتبه المستخدم يبقى كما هو - عليه هو يحسب القيمة الصحيحة يدويًا
-                // قبل ما يبدّل الإطار، تمامًا زي ما يصير بـ Mission Planner.
                 let removeModes = []
+                let oldFrame    = _root.missionController.globalAltitudeFrame
 
                 if (!_root._controllerVehicle.supports.terrainFrame) {
                     removeModes.push(QGroundControl.AltitudeFrameTerrain)
                 }
 
                 let updateFunction = function(altFrame) {
+                    let rel      = QGroundControl.AltitudeFrameRelative
+                    let amsl     = QGroundControl.AltitudeFrameAbsolute
+                    let homeAmsl = _root.missionController.plannedHomePosition.altitude
+
                     _root.missionController.globalAltitudeFrame = altFrame
 
-                    if (altFrame === QGroundControl.AltitudeFrameMixed) {
+                    if (altFrame === QGroundControl.AltitudeFrameMixed || altFrame === oldFrame) {
                         return
                     }
 
-                    // ينطبق على كل النقاط (بما فيها Takeoff) - بدون تحويل الرقم
                     for (var i = 1; i < _root._visualItems.count; i++) {
                         var item = _root._visualItems.get(i)
-                        if (!item || item.altitudeFrame === undefined) {
+                        if (!item || item.altitude === undefined || item.altitudeFrame === undefined || item.isTakeoffItem) {
                             continue
+                        }
+                        if (!isNaN(homeAmsl)) {
+                            if (oldFrame === rel && altFrame === amsl) {
+                                item.altitude.rawValue = item.altitude.rawValue + homeAmsl
+                            } else if (oldFrame === amsl && altFrame === rel) {
+                                item.altitude.rawValue = item.altitude.rawValue - homeAmsl
+                            }
                         }
                         item.altitudeFrame = altFrame
                     }
@@ -98,26 +106,18 @@ Rectangle {
             fact: QGroundControl.settingsManager.appSettings.defaultMissionItemAltitude
         }
 
-        RowLayout {
+        FactTextFieldSlider {
             Layout.fillWidth: true
+            label: qsTr("Flight Speed")
+            fact: _root._settingsItem ? _root._settingsItem.speedSection.flightSpeed : null
+            showEnableCheckbox: true
+            enableCheckBoxChecked: _root._settingsItem ? _root._settingsItem.speedSection.specifyFlightSpeed : false
             visible: _root._settingsItem ? _root._settingsItem.speedSection.available : false
-            spacing: ScreenTools.defaultFontPixelWidth
 
-            QGCCheckBox {
-                text: qsTr("Flight Speed")
-                checked: _root._settingsItem ? _root._settingsItem.speedSection.specifyFlightSpeed : false
-                onClicked: {
-                    if (_root._settingsItem) {
-                        _root._settingsItem.speedSection.specifyFlightSpeed = checked
-                    }
+            onEnableCheckboxClicked: {
+                if (_root._settingsItem) {
+                    _root._settingsItem.speedSection.specifyFlightSpeed = enableCheckBoxChecked
                 }
-            }
-
-            LabelledFactTextField {
-                Layout.fillWidth: true
-                label: ""
-                fact: _root._settingsItem ? _root._settingsItem.speedSection.flightSpeed : null
-                enabled: _root._settingsItem ? _root._settingsItem.speedSection.specifyFlightSpeed : false
             }
         }
 
