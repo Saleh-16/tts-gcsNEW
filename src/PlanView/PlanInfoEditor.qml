@@ -23,6 +23,19 @@ Rectangle {
     property bool _waypointsOnlyMode: QGroundControl.corePlugin.options.missionWaypointsOnly
     property real _fieldWidth: ScreenTools.defaultFontPixelWidth * 16
 
+    // ── Auto-set Home from GCS position (GPS) ──
+    property var _gcsPos: QGroundControl.qgcPositionManger.gcsPosition
+
+    Component.onCompleted: _tryAutoSetHome()
+    on_GcsPosChanged: _tryAutoSetHome()
+
+    function _tryAutoSetHome() {
+        if (_settingsItem && !missionController.homePositionSet && _gcsPos && _gcsPos.isValid) {
+            _settingsItem.setCoordinate(_gcsPos)
+            console.log("Home auto-set from GCS position: " + _gcsPos.latitude.toFixed(6) + ", " + _gcsPos.longitude.toFixed(6))
+        }
+    }
+
     width:  parent ? parent.width : 0
     height: mainColumn.height + ScreenTools.defaultFontPixelHeight
     color:  qgcPal.windowShadeDark

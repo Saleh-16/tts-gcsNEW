@@ -379,7 +379,7 @@ QString SimpleMissionItem::abbreviation() const
     case MAV_CMD_NAV_TAKEOFF:
         return tr("Takeoff");
     case MAV_CMD_NAV_LAND:
-        return tr("Land");
+        return tr("Target");
     case MAV_CMD_NAV_VTOL_TAKEOFF:
         return tr("Transition Direction");
     case MAV_CMD_NAV_VTOL_LAND:
@@ -943,7 +943,7 @@ double SimpleMissionItem::specifiedGimbalPitch(void)
 
 double SimpleMissionItem::specifiedVehicleYaw(void)
 {
-    return command() == MAV_CMD_NAV_WAYPOINT ? missionItem().param4() : qQNaN();
+    return (command() == MAV_CMD_NAV_WAYPOINT || command() == MAV_CMD_NAV_SPLINE_WAYPOINT) ? missionItem().param4() : qQNaN();
 }
 
 void SimpleMissionItem::_possibleVehicleYawChanged(void)
@@ -983,8 +983,9 @@ void SimpleMissionItem::_updateOptionalSections(void)
 
     _cameraSection = new CameraSection(_masterController, this);
     _speedSection = new SpeedSection(_masterController, this);
-    if (static_cast<MAV_CMD>(command()) == MAV_CMD_NAV_WAYPOINT) {
-        _cameraSection->setAvailable(true);
+    if (static_cast<MAV_CMD>(command()) == MAV_CMD_NAV_WAYPOINT ||
+        static_cast<MAV_CMD>(command()) == MAV_CMD_NAV_SPLINE_WAYPOINT) {   // TTS: Target
+        _cameraSection->setAvailable(false);
         _speedSection->setAvailable(true);
     }
 

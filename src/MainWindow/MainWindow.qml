@@ -9,6 +9,7 @@ import QGroundControl.FactControls
 import QGroundControl.FlyView
 import QGroundControl.FlightMap
 import QGroundControl.PlanView
+import QGroundControl.PreFlightInspection
 import QGroundControl.Toolbar
 /// @brief Native QML top level window
 /// All properties defined here are visible to all QML pages.
@@ -370,6 +371,7 @@ ApplicationWindow {
                     }
                 }
             }
+
             SidebarNavButton {
                 objectName:         "sidebar_viewPlan"
                 text:               qsTr("Plan")
@@ -380,6 +382,29 @@ ApplicationWindow {
                     }
                 }
             }
+            SidebarNavButton {
+                            objectName:         "sidebar_viewPFI"
+                            text:               qsTr("Checklist")
+                            imageResource:      "/qmlimages/check.svg"
+                            onClicked:          preFlightDialogFactory.open()
+                        }
+            QGCPopupDialogFactory {
+                            id: preFlightDialogFactory
+                            dialogComponent: Component {
+                                QGCPopupDialog {
+                                    id: pfiDialog
+                                    title:      qsTr("Pre-Flight Checklist")
+                                    buttons:    Dialog.Close
+
+                                    PreFlightInspectionPlanSection {
+                                        width:                  ScreenTools.defaultFontPixelWidth * 45
+                                        expanded:               true
+                                        planMasterController:   globals.planMasterControllerFlyView
+                                        onInspectionCompleted:  pfiDialog.close()
+                                    }
+                                }
+                            }
+                        }
             SidebarNavButton {
                 objectName:         "sidebar_viewAnalyze"
                 text:               qsTr("Analyze")

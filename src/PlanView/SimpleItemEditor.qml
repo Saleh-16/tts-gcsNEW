@@ -1,23 +1,18 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
-
 import QGroundControl
 import QGroundControl.Controls
 import QGroundControl.FactControls
-
 // Editor for Simple mission items
 Rectangle {
     required property var missionItem
     required property real availableWidth
-
     id: root
     width: availableWidth
     height: editorColumn.height + (_margin * 2)
     color: qgcPal.windowShadeDark
     radius: _radius
-
-
     property bool _specifiesAltitude: missionItem.specifiesAltitude
     property real _margin: ScreenTools.defaultFontPixelHeight / 2
     property real _altRectMargin: ScreenTools.defaultFontPixelWidth / 2
@@ -26,9 +21,7 @@ Rectangle {
     property bool _globalAltFrameIsMixed: _globalAltFrame == QGroundControl.AltitudeFrameMixed
     property real _radius: ScreenTools.defaultFontPixelWidth / 2
     property real _fieldSpacing: ScreenTools.defaultFontPixelHeight / 2
-
     QGCPalette { id: qgcPal; colorGroupEnabled: root.enabled }
-
     Column {
         id: editorColumn
         anchors.margins: _margin
@@ -36,7 +29,6 @@ Rectangle {
         anchors.right: parent.right
         anchors.top: parent.top
         spacing: _margin
-
         // Takeoff item
         ColumnLayout {
             anchors.margins: _margin
@@ -44,7 +36,6 @@ Rectangle {
             anchors.right: parent.right
             spacing: _margin
             visible: missionItem.isTakeoffItem && missionItem.wizardMode // Hack special case for takeoff item
-
             QGCLabel {
                 text: qsTr("Move '%1' %2 to the %3 location. %4")
                     .arg(_controllerVehicle.vtol ? qsTr("T") : qsTr("T"))
@@ -55,14 +46,12 @@ Rectangle {
                 wrapMode: Text.WordWrap
                 visible: !initialClickLabel.visible
             }
-
             QGCLabel {
                 text: qsTr("Ensure clear of obstacles and into the wind.")
                 Layout.fillWidth: true
                 wrapMode: Text.WordWrap
                 visible: !initialClickLabel.visible
             }
-
             QGCButton {
                 text: qsTr("Done")
                 Layout.fillWidth: true
@@ -71,7 +60,6 @@ Rectangle {
                     missionItem.wizardMode = false
                 }
             }
-
             QGCLabel {
                 id: initialClickLabel
                 text: missionItem.launchTakeoffAtSameLocation ?
@@ -82,25 +70,20 @@ Rectangle {
                 visible: missionItem.isTakeoffItem && !missionItem.launchCoordinate.isValid
             }
         }
-
         ColumnLayout {
             width: parent.width
             spacing: _fieldSpacing
             visible: !missionItem.wizardMode
-
             QGCTabBar {
                 id: tabBar
                 Layout.fillWidth: true
                 visible: _multipleTabsVisible()
-
                 property bool showBasicItems:    tabBar.visible ? tabBar.currentIndex === 0 : _basicItemsAvailable
                 property bool showCameraItems:   tabBar.visible ? tabBar.currentIndex === 1 : _cameraAvailable
                 property bool showAdvancedItems: tabBar.visible ? tabBar.currentIndex === 2 : _advancedItemsAvailable
-
                 property bool _basicItemsAvailable: _specifiesAltitude || missionItem.speedSection.available || missionItem.comboboxFacts.count > 0 || missionItem.textFieldFacts.count > 0 || missionItem.nanFacts.count > 0
-                property bool _advancedItemsAvailable: missionItem.comboboxFactsAdvanced.count > 0 || missionItem.textFieldFactsAdvanced.count > 0 || missionItem.nanFactsAdvanced.count > 0
+                property bool _advancedItemsAvailable: missionItem.command === 82 ? false : (missionItem.comboboxFactsAdvanced.count > 0 || missionItem.textFieldFactsAdvanced.count > 0 || missionItem.nanFactsAdvanced.count > 0)   // TTS: Target بلا تبويب متقدم
                 property bool _cameraAvailable: missionItem.cameraSection.available
-
                 function _multipleTabsVisible() {
                     let visibleCount = 0
                     if (_basicItemsAvailable) visibleCount++
@@ -108,7 +91,6 @@ Rectangle {
                     if (_advancedItemsAvailable) visibleCount++
                     return visibleCount > 1
                 }
-
                 Component.onCompleted: {
                     if (_basicItemsAvailable) {
                         tabBar.currentIndex = 0
@@ -120,87 +102,71 @@ Rectangle {
                         tabBar.currentIndex = -1
                     }
                 }
-
                 QGCTabButton {
                     id: basicItemsTab
                     icon.source: "/res/PlanSimpleItemBasic.svg"
                     visible: tabBar._basicItemsAvailable
                 }
-
                 QGCTabButton {
                     id: cameraTab
                     icon.source: "/res/PlanSimpleItemCamera.svg"
                     visible: tabBar._cameraAvailable
                 }
-
                 QGCTabButton {
                     id: advancedItemsTab
                     icon.source: "/res/PlanSimpleItemAdvanced.svg"
                     visible: tabBar._advancedItemsAvailable
                 }
             }
-
             ColumnLayout {
                 Layout.fillWidth: true
                 spacing: _fieldSpacing
                 visible: tabBar.showBasicItems
-
                 ColumnLayout {
                     Layout.fillWidth: true
                     spacing: _fieldSpacing
                     visible: _specifiesAltitude
-
                     RowLayout {
                         Layout.fillWidth: true
                         visible: _globalAltFrameIsMixed
-
                         QGCLabel {
                             Layout.fillWidth: true
                             text: qsTr("Alt Frame")
                         }
-
                         AltFrameCombo {
                             altitudeFrame: missionItem.altitudeFrame
                             vehicle: _controllerVehicle
                             onAltitudeFrameChanged: missionItem.altitudeFrame = altitudeFrame
                         }
                     }
-
                     FactTextFieldSlider {
                         id: altField
                         Layout.fillWidth: true
                         label: qsTr("Altitude%1").arg(_extraLabelText())
                         fact: missionItem.altitude
-
                         function _extraLabelText() {
                             return qsTr(" (%1)").arg(QGroundControl.altitudeFrameExtraUnits(missionItem.altitudeFrame))
                         }
                     }
-
                     QGCLabel {
                         font.pointSize: ScreenTools.smallFontPointSize
                         text: qsTr("Actual AMSL alt sent: %1 %2").arg(missionItem.amslAltAboveTerrain.valueString).arg(missionItem.amslAltAboveTerrain.units)
                         visible: missionItem.altitudeFrame === QGroundControl.AltitudeFrameCalcAboveTerrain
                     }
                 }
-
                 ColumnLayout {
                     Layout.fillWidth: true
                     spacing: _fieldSpacing
-
                     Repeater {
                         model: missionItem.comboboxFacts
-
                         ColumnLayout {
                             Layout.fillWidth: true
                             spacing: 0
-
                             QGCLabel {
                                 font.pointSize: ScreenTools.smallFontPointSize
                                 text: object.name
                                 visible: object.name !== ""
                             }
-
                             FactComboBox {
                                 Layout.fillWidth: true
                                 indexModel: false
@@ -210,10 +176,8 @@ Rectangle {
                         }
                     }
                 }
-
                 Repeater {
                     model: missionItem.textFieldFacts
-
                     FactTextFieldSlider {
                         Layout.fillWidth: true
                         label: object.name
@@ -222,10 +186,8 @@ Rectangle {
                         warnOnUserMinMaxInvalid: false
                     }
                 }
-
                 Repeater {
                     model: missionItem.nanFacts
-
                     FactTextFieldSlider {
                         Layout.fillWidth: true
                         label: object.name
@@ -233,11 +195,9 @@ Rectangle {
                         showEnableCheckbox: true
                         enableCheckBoxChecked: !isNaN(object.rawValue)
                         warnOnUserMinMaxInvalid: false
-
                         onEnableCheckboxClicked: object.rawValue = enableCheckBoxChecked ? 0 : NaN
                     }
                 }
-
                 FactTextFieldSlider {
                     Layout.fillWidth: true
                     label: qsTr("Flight Speed")
@@ -245,42 +205,202 @@ Rectangle {
                     showEnableCheckbox: true
                     enableCheckBoxChecked: missionItem.speedSection.specifyFlightSpeed
                     visible: missionItem.speedSection.available
-
                     onEnableCheckboxClicked: missionItem.speedSection.specifyFlightSpeed = enableCheckBoxChecked
                 }
-            }
 
+                // ═══════════════════════════════════════════════════════════
+                //  TTS GROUP — WAYPOINT GEOMETRY (Dist / AZ / Grad% / Angle)
+                //  قيم للعرض فقط (read-only) محسوبة أصلاً في MissionController
+                //    missionItem.distance      → المسافة من النقطة السابقة (m، خام SI)
+                //    missionItem.azimuth       → الأزيموث من النقطة السابقة (deg)
+                //    missionItem.altDifference → فرق الارتفاع عن السابقة (m، خام SI)
+                // ═══════════════════════════════════════════════════════════
+                Rectangle {
+                    id:                     ttsGeoTable
+                    Layout.fillWidth:       true
+                    Layout.preferredHeight: ttsGeoGrid.implicitHeight + (ScreenTools.defaultFontPixelHeight * 0.8)
+                    color:                  "#0A0C0E"
+                    border.color:           "#1E2830"
+                    border.width:           1
+                    radius:                 root._radius
+                    visible:                missionItem.specifiesCoordinate
+
+                    // ── قيم خام مع حراسة كاملة ضد undefined / NaN / أول نقطة ──
+                    readonly property real _dist:  (missionItem.distance !== undefined &&
+                                                    !isNaN(missionItem.distance) &&
+                                                    missionItem.distance > 0) ? missionItem.distance : 0
+
+                    readonly property real _az:    (missionItem.azimuth !== undefined &&
+                                                    !isNaN(missionItem.azimuth)) ? missionItem.azimuth : 0
+
+                    readonly property real _dAlt:  (missionItem.altDifference !== undefined &&
+                                                    !isNaN(missionItem.altDifference)) ? missionItem.altDifference : 0
+
+                    readonly property bool _valid: _dist > 0.1
+
+                    // Grad %  = (Δalt / dist) × 100   |  موجب = صعود، سالب = هبوط
+                    readonly property real _grad:  _valid ? (_dAlt / _dist) * 100 : 0
+                    // Angle   = atan2(Δalt, dist) بالدرجات
+                    readonly property real _angle: _valid ? Math.atan2(_dAlt, _dist) * 180 / Math.PI : 0
+
+                    // تحويل وحدة المسافة حسب إعداد المستخدم (Feet=0 / Meters=1)
+                    function _distText() {
+                        if (!_valid) return "–"
+                        var v = _dist
+                        var u = "m"
+                        try {
+                            if (QGroundControl.settingsManager.unitsSettings
+                                              .horizontalDistanceUnits.rawValue === 0) {
+                                v = _dist / 0.3048      // FactMetaData.h: feetToMeters = 0.3048
+                                u = "ft"
+                            }
+                        } catch (e) { /* fallback: متر خام */ }
+                        return (v < 1000 ? v.toFixed(1) : (v / 1000).toFixed(2) + "k") + " " + u
+                    }
+
+                    GridLayout {
+                        id:             ttsGeoGrid
+                        anchors.centerIn: parent
+                        width:          parent.width - (ScreenTools.defaultFontPixelWidth * 1.5)
+                        columns:        4
+                        columnSpacing:  0
+                        rowSpacing:     ScreenTools.defaultFontPixelHeight * 0.2
+
+                        // ── صف العناوين ──────────────────────────────────
+                        QGCLabel {
+                            Layout.fillWidth:      true
+                            Layout.preferredWidth: 1
+                            horizontalAlignment:   Text.AlignHCenter
+                            text:                  qsTr("DIST")
+                            font.pointSize:        ScreenTools.smallFontPointSize
+                            font.bold:             true
+                            font.family:           "monospace"
+                            font.letterSpacing:    1.2
+                            color:                 "#4A6070"
+                            elide:                 Text.ElideRight
+                        }
+                        QGCLabel {
+                            Layout.fillWidth:      true
+                            Layout.preferredWidth: 1
+                            horizontalAlignment:   Text.AlignHCenter
+                            text:                  qsTr("AZ")
+                            font.pointSize:        ScreenTools.smallFontPointSize
+                            font.bold:             true
+                            font.family:           "monospace"
+                            font.letterSpacing:    1.2
+                            color:                 "#4A6070"
+                            elide:                 Text.ElideRight
+                        }
+                        QGCLabel {
+                            Layout.fillWidth:      true
+                            Layout.preferredWidth: 1
+                            horizontalAlignment:   Text.AlignHCenter
+                            text:                  qsTr("GRAD %")
+                            font.pointSize:        ScreenTools.smallFontPointSize
+                            font.bold:             true
+                            font.family:           "monospace"
+                            font.letterSpacing:    1.2
+                            color:                 "#4A6070"
+                            elide:                 Text.ElideRight
+                        }
+                        QGCLabel {
+                            Layout.fillWidth:      true
+                            Layout.preferredWidth: 1
+                            horizontalAlignment:   Text.AlignHCenter
+                            text:                  qsTr("ANGLE")
+                            font.pointSize:        ScreenTools.smallFontPointSize
+                            font.bold:             true
+                            font.family:           "monospace"
+                            font.letterSpacing:    1.2
+                            color:                 "#4A6070"
+                            elide:                 Text.ElideRight
+                        }
+
+                        // ── خط فاصل ──────────────────────────────────────
+                        Rectangle {
+                            Layout.columnSpan:      4
+                            Layout.fillWidth:       true
+                            Layout.preferredHeight: 1
+                            color:                  "#1E2830"
+                        }
+
+                        // ── صف القيم ─────────────────────────────────────
+                        QGCLabel {
+                            Layout.fillWidth:      true
+                            Layout.preferredWidth: 1
+                            horizontalAlignment:   Text.AlignHCenter
+                            text:                  ttsGeoTable._distText()
+                            font.bold:             true
+                            font.family:           "monospace"
+                            color:                 ttsGeoTable._valid ? "#DDE5EA" : "#4A6070"
+                            elide:                 Text.ElideRight
+                        }
+                        QGCLabel {
+                            Layout.fillWidth:      true
+                            Layout.preferredWidth: 1
+                            horizontalAlignment:   Text.AlignHCenter
+                            text:                  ttsGeoTable._valid
+                                                   ? ((ttsGeoTable._az % 360 + 360) % 360).toFixed(0).padStart(3, "0") + "°"
+                                                   : "–"
+                            font.bold:             true
+                            font.family:           "monospace"
+                            color:                 ttsGeoTable._valid ? "#DDE5EA" : "#4A6070"
+                            elide:                 Text.ElideRight
+                        }
+                        QGCLabel {
+                            Layout.fillWidth:      true
+                            Layout.preferredWidth: 1
+                            horizontalAlignment:   Text.AlignHCenter
+                            text:                  ttsGeoTable._valid
+                                                   ? (ttsGeoTable._grad >= 0 ? "+" : "") + ttsGeoTable._grad.toFixed(1)
+                                                   : "–"
+                            font.bold:             true
+                            font.family:           "monospace"
+                            color:                 !ttsGeoTable._valid ? "#4A6070"
+                                                   : ttsGeoTable._grad < 0 ? "#FF6600" : "#00FF88"
+                            elide:                 Text.ElideRight
+                        }
+                        QGCLabel {
+                            Layout.fillWidth:      true
+                            Layout.preferredWidth: 1
+                            horizontalAlignment:   Text.AlignHCenter
+                            text:                  ttsGeoTable._valid
+                                                   ? (ttsGeoTable._angle >= 0 ? "+" : "") + ttsGeoTable._angle.toFixed(1) + "°"
+                                                   : "–"
+                            font.bold:             true
+                            font.family:           "monospace"
+                            color:                 !ttsGeoTable._valid ? "#4A6070"
+                                                   : ttsGeoTable._angle < 0 ? "#FF6600" : "#00FF88"
+                            elide:                 Text.ElideRight
+                        }
+                    }
+                }
+                // ═══════════ نهاية TTS WAYPOINT GEOMETRY ══════════════════
+            }
             CameraSection {
                 Layout.fillWidth: true
                 showSectionHeader: false
                 missionItem: root.missionItem
                 visible: tabBar.showCameraItems
-
                 Component.onCompleted: checked = missionItem.cameraSection.settingsSpecified
             }
-
             ColumnLayout {
                 Layout.fillWidth: true
                 spacing: _fieldSpacing
                 visible: tabBar.showAdvancedItems
-
                 ColumnLayout {
                     Layout.fillWidth: true
                     spacing: _fieldSpacing
-
                     Repeater {
                         model: missionItem.comboboxFactsAdvanced
-
                         ColumnLayout {
                             Layout.fillWidth: true
                             spacing: 0
-
                             QGCLabel {
                                 font.pointSize: ScreenTools.smallFontPointSize
                                 text: object.name
                                 visible: object.name !== ""
                             }
-
                             FactComboBox {
                                 Layout.fillWidth: true
                                 indexModel: false
@@ -290,10 +410,8 @@ Rectangle {
                         }
                     }
                 }
-
                 Repeater {
                     model: missionItem.textFieldFactsAdvanced
-
                     FactTextFieldSlider {
                         Layout.fillWidth: true
                         label: object.name
@@ -302,10 +420,8 @@ Rectangle {
                         warnOnUserMinMaxInvalid: false
                     }
                 }
-
                 Repeater {
                     model: missionItem.nanFactsAdvanced
-
                     FactTextFieldSlider {
                         Layout.fillWidth: true
                         label: object.name
@@ -313,7 +429,6 @@ Rectangle {
                         showEnableCheckbox: true
                         enableCheckBoxChecked: !isNaN(object.rawValue)
                         warnOnUserMinMaxInvalid: false
-
                         onEnableCheckboxClicked: object.rawValue = enableCheckBoxChecked ? 0 : NaN
                     }
                 }

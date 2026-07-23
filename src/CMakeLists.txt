@@ -55,6 +55,7 @@ add_subdirectory(MAVLink)
 add_subdirectory(MissionManager)
 add_subdirectory(PlanView)
 add_subdirectory(PositionManager)
+add_subdirectory(PreFlightInspection)
 add_subdirectory(QmlControls)
 add_subdirectory(Settings)
 add_subdirectory(Terrain)
@@ -138,6 +139,7 @@ target_link_libraries(${CMAKE_PROJECT_NAME}
         FirstRunPromptDialogsModule
         FlyViewModule
         FlightMapModule
+        PreFlightInspectionModule
         PlanViewModule
         QGroundControlControlsModule
         QGroundControlModule

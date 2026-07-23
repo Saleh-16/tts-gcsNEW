@@ -13,7 +13,6 @@
 //  Data flows ONE DIRECTION only: 1 → 2 → 3 → 4 → 5 → 6
 //  No subsystem ever calls back to a subsystem above it.
 // ============================================================================
-
 .pragma library
 
 var DEG_TO_RAD = Math.PI / 180.0
@@ -99,10 +98,12 @@ function interpretMission(visualItems, homePosition) {
             // RTL itself has no coords — use the nav point before it
             lastNav = navPoints[navPoints.length - 2]
         }
+
         var homePoint = null
         for (var h = 0; h < points.length; h++) {
             if (points[h].type === "HOME") { homePoint = points[h]; break }
         }
+
         if (homePoint && lastNav) {
             segments.push({
                 fromIndex:  lastNav.displayIndex,
@@ -234,7 +235,6 @@ function _isNavigationItem(type) {
     }
 }
 
-
 // ═══════════════════════════════════════════════════════════════════════════
 //  [2] GEOMETRY ENGINE
 //  Pure mathematics. No knowledge of aircraft or limits.
@@ -298,7 +298,6 @@ function calculateGeometry(segments, points) {
     // ── Calculate per-point stats ──
     for (var j = 0; j < points.length; j++) {
         if (!points[j].isNavigation || !points[j].isValid) continue
-
         if (points[j].altMSL > summary.maxAltitude) summary.maxAltitude = points[j].altMSL
         if (points[j].altMSL < summary.minAltitude) summary.minAltitude = points[j].altMSL
 
@@ -369,7 +368,6 @@ function _turnDirection(bearing1, bearing2) {
     return diff <= 180 ? "RIGHT" : "LEFT"
 }
 
-
 // ═══════════════════════════════════════════════════════════════════════════
 //  [3] RELATIONSHIP ANALYSIS
 //  Transforms raw geometry + effective limits into engineering relationships.
@@ -382,7 +380,6 @@ function analyzeRelationships(geometryResult, effectiveLimits) {
     var climbs = []
     var spacings = []
     var altitudes = []
-
     var lim = effectiveLimits
 
     // ── Turn analysis ──
@@ -403,11 +400,6 @@ function analyzeRelationships(geometryResult, effectiveLimits) {
     for (var s = 0; s < geometryResult.segments.length; s++) {
         spacings.push(_analyzeSpacing(geometryResult.segments[s], lim))
     }
-
-    // ── Altitude analysis (per navigation point) ──
-    // We need the points — but we only have segments here.
-    // Altitude checks are done via segments' toPoint altitudes.
-    // (Handled in validation using the interpreted points directly)
 
     // ── Path analysis ──
     var path = _analyzePathPattern(geometryResult)
@@ -434,7 +426,6 @@ function _analyzeTurn(turn, segments, lim) {
     // Turn radius at cruise speed: R = V² / (g × tan(bankAngle))
     var bankRad = lim.maxBankAngle * DEG_TO_RAD
     var tanBank = Math.tan(bankRad)
-
     var radiusAtCruise = (tanBank > 0) ? (lim.cruiseSpeed * lim.cruiseSpeed) / (GRAVITY * tanBank) : Infinity
     var radiusAtMinSpd = (tanBank > 0 && lim.minSpeed > 0) ? (lim.minSpeed * lim.minSpeed) / (GRAVITY * tanBank) : Infinity
 
@@ -525,6 +516,7 @@ function _analyzeClimb(seg, lim) {
 
 function _analyzeSpacing(seg, lim) {
     var dist = seg.distance
+
     var classification
     if (dist < lim.minWaypointSpacing)          classification = "TOO_SHORT"
     else if (dist < lim.minWaypointSpacing * 2) classification = "SHORT"
@@ -569,7 +561,6 @@ function _analyzePathPattern(geometryResult) {
     var shortest = distances.length > 0 ? Math.min.apply(null, distances) : 0
     var longest = distances.length > 0 ? Math.max.apply(null, distances) : 0
     var ratio = (shortest > 0) ? longest / shortest : 0
-
     var spacingVariance
     if (ratio < 3)       spacingVariance = "LOW"
     else if (ratio < 10) spacingVariance = "MEDIUM"
@@ -593,7 +584,6 @@ function _analyzePathPattern(geometryResult) {
     }
 }
 
-
 // ═══════════════════════════════════════════════════════════════════════════
 //  [4] VALIDATION ENGINE
 //  Reads relationships and issues findings. Never calculates.
@@ -601,15 +591,61 @@ function _analyzePathPattern(geometryResult) {
 
 function validate(relationships, structure, limits, points) {
     var findings = []
-
-    _validateStructure(structure, findings)
-    _validateTurns(relationships.turns, limits, findings)
-    _validateClimbs(relationships.climbs, findings)
-    _validateSpacing(relationships.spacings, findings)
-    _validateAltitudes(points, limits, findings)
-    _validateConsistency(points, findings)
-
+    _validateClimbAngle(relationships.climbs, findings)
     return findings
+}
+
+// ── SINGLE RULE: Climb/Descent Angle ──
+// > 5°  = CRITICAL
+// > 2.5° and <= 5° = WARNING
+// <= 2.5° = PASS
+function _validateClimbAngle(climbs, findings) {
+    var failCount = 0
+    for (var i = 0; i < climbs.length; i++) {
+        var c = climbs[i]
+        var angle = c.gradient  // absolute angle in degrees
+
+        if (angle > 5.0) {
+            failCount++
+            findings.push(_finding("CRITICAL", "GEOMETRY",
+                c.direction + " angle " + angle.toFixed(1) + "° exceeds 5° limit: WP " + c.fromIndex + " → " + c.toIndex,
+                [c.fromIndex, c.toIndex],
+                angle.toFixed(1) + "° " + c.direction.toLowerCase() + " angle. Maximum allowed: 5.0°. " +
+                "Altitude change: " + Math.abs(c.altitudeChange).toFixed(0) + "m.",
+                "Aircraft cannot safely " + c.direction.toLowerCase() + " at this angle. Mission will fail.",
+                "Increase horizontal distance between waypoints or reduce altitude change",
+                "Mission requirement: angle <= 5.0°"))
+        } else if (angle > 2.5) {
+            failCount++
+            findings.push(_finding("WARNING", "GEOMETRY",
+                c.direction + " angle " + angle.toFixed(1) + "° exceeds 2.5° ideal: WP " + c.fromIndex + " → " + c.toIndex,
+                [c.fromIndex, c.toIndex],
+                angle.toFixed(1) + "° " + c.direction.toLowerCase() + " angle. Recommended maximum: 2.5°. " +
+                "Altitude change: " + Math.abs(c.altitudeChange).toFixed(0) + "m.",
+                "Steep angle may cause energy management issues.",
+                "Increase horizontal distance or reduce altitude change to bring angle below 2.5°",
+                "Mission recommendation: angle <= 2.5°"))
+        }
+    }
+    if (failCount === 0) {
+        if (climbs.length > 0) {
+            var maxAngle = 0
+            for (var j = 0; j < climbs.length; j++) {
+                if (climbs[j].gradient > maxAngle) maxAngle = climbs[j].gradient
+            }
+            findings.push(_finding("NOTICE", "GEOMETRY",
+                "All climb/descent angles within limits (max: " + maxAngle.toFixed(1) + "°)",
+                [], "All segment angles are below 2.5°. No steep climbs or descents.",
+                "No impact — all angles are safe.",
+                "No action required", ""))
+        } else {
+            findings.push(_finding("NOTICE", "GEOMETRY",
+                "Level flight — no altitude changes",
+                [], "All waypoints are at the same altitude.",
+                "No impact — flat mission.",
+                "No action required", ""))
+        }
+    }
 }
 
 function _validateStructure(structure, findings) {
@@ -618,18 +654,31 @@ function _validateStructure(structure, findings) {
             ["H"], "Home Position is not set",
             "RTL will have no destination. Distance calculations will be invalid.",
             "Set Home Position before planning", "QGC Mission Protocol"))
+    } else {
+        findings.push(_finding("NOTICE", "STRUCTURE", "Home Position set",
+            ["H"], "Home Position is defined with valid coordinates.",
+            "No impact — Home is set correctly.", "No action required", ""))
     }
     if (!structure.hasTakeoff) {
         findings.push(_finding("CRITICAL", "STRUCTURE", "No Takeoff command",
             [], "Mission has no explicit Takeoff item",
             "Aircraft may not arm or may takeoff with undefined behavior.",
             "Add a Takeoff item as the first mission command", "ArduPilot Mission Protocol"))
+    } else {
+        findings.push(_finding("NOTICE", "STRUCTURE", "Takeoff command present",
+            [], "Mission includes an explicit Takeoff item.",
+            "No impact — Takeoff is defined.", "No action required", ""))
     }
     if (!structure.hasRTL && !structure.hasLanding) {
         findings.push(_finding("CRITICAL", "STRUCTURE", "No terminal action",
             [], "Mission has no RTL or Land command at the end",
             "Aircraft will hold at last waypoint until battery runs out.",
             "Add RTL or Land as the last mission item", "ArduPilot Mission Protocol"))
+    } else {
+        var termType = structure.hasRTL ? "RTL" : "Land"
+        findings.push(_finding("NOTICE", "STRUCTURE", "Terminal action present (" + termType + ")",
+            [], "Mission ends with " + termType + " command.",
+            "No impact — mission has a defined ending.", "No action required", ""))
     }
     if (structure.invalidPoints.length > 0) {
         findings.push(_finding("CRITICAL", "STRUCTURE", "Invalid coordinates",
@@ -641,15 +690,21 @@ function _validateStructure(structure, findings) {
         findings.push(_finding("CRITICAL", "STRUCTURE", "Empty mission",
             [], "Mission has no navigation waypoints",
             "No flight path defined.", "Add waypoints to define the flight path", ""))
+    } else {
+        findings.push(_finding("NOTICE", "STRUCTURE", structure.navigationPoints + " navigation waypoints defined",
+            [], "Mission contains " + structure.navigationPoints + " valid navigation points.",
+            "No impact — flight path is defined.", "No action required", ""))
     }
 }
 
 function _validateTurns(turns, limits, findings) {
+    var failCount = 0
     for (var i = 0; i < turns.length; i++) {
         var t = turns[i]
         if (t.classification === "STRAIGHT" || t.classification === "GENTLE") continue
 
         if (!t.feasibleAtMinSpeed) {
+            failCount++
             findings.push(_finding("CRITICAL", "GEOMETRY",
                 "Turn impossible at WP " + t.waypointIndex,
                 [t.waypointIndex],
@@ -658,7 +713,41 @@ function _validateTurns(turns, limits, findings) {
                 "Aircraft cannot complete this turn and will deviate from planned path.",
                 "Add intermediate waypoints to smooth the turn or increase spacing",
                 t.bankAngleSource + " = " + t.bankAngleUsed.toFixed(0) + "°"))
+        } else if (t.classification === "REVERSAL") {
+            failCount++
+            findings.push(_finding("CRITICAL", "GEOMETRY",
+                "Path overshoot: " + t.headingChange.toFixed(0) + "° reversal at WP " + t.waypointIndex,
+                [t.waypointIndex],
+                t.headingChange.toFixed(0) + "° " + t.turnDirection.toLowerCase() +
+                " reversal. Aircraft will overshoot the planned path significantly. " +
+                "Turn radius: " + t.turnRadiusAtCruise.toFixed(0) + "m at cruise speed.",
+                "Actual flight path will deviate from planned path. L1 navigation controller cannot track this turn accurately.",
+                "Split into multiple waypoints with turns below 90° each",
+                t.bankAngleSource + " = " + t.bankAngleUsed.toFixed(0) + "°"))
+        } else if (t.classification === "SHARP") {
+            failCount++
+            findings.push(_finding("CRITICAL", "GEOMETRY",
+                "Path overshoot: " + t.headingChange.toFixed(0) + "° sharp turn at WP " + t.waypointIndex,
+                [t.waypointIndex],
+                t.headingChange.toFixed(0) + "° " + t.turnDirection.toLowerCase() +
+                " turn. Aircraft will overshoot the waypoint and deviate from planned path. " +
+                "Turn radius: " + t.turnRadiusAtCruise.toFixed(0) + "m at cruise speed.",
+                "Actual flight path will not match planned path. Mission accuracy compromised.",
+                "Add intermediate waypoints to reduce turn angle below 90°",
+                t.bankAngleSource + " = " + t.bankAngleUsed.toFixed(0) + "°"))
+        } else if (t.classification === "MODERATE") {
+            failCount++
+            findings.push(_finding("WARNING", "GEOMETRY",
+                "Moderate turn (" + t.headingChange.toFixed(0) + "°) at WP " + t.waypointIndex,
+                [t.waypointIndex],
+                t.headingChange.toFixed(0) + "° " + t.turnDirection.toLowerCase() +
+                " turn. Minor path deviation expected. " +
+                "Turn radius: " + t.turnRadiusAtCruise.toFixed(0) + "m at cruise speed.",
+                "Small overshoot possible — actual path may differ slightly from planned.",
+                "Consider adding intermediate waypoints to smooth the turn",
+                t.bankAngleSource + " = " + t.bankAngleUsed.toFixed(0) + "°"))
         } else if (!t.feasibleAtCruise) {
+            failCount++
             findings.push(_finding("WARNING", "GEOMETRY",
                 "Turn requires speed reduction at WP " + t.waypointIndex,
                 [t.waypointIndex],
@@ -670,13 +759,22 @@ function _validateTurns(turns, limits, findings) {
                 t.bankAngleSource + " = " + t.bankAngleUsed.toFixed(0) + "°"))
         }
     }
+    if (failCount === 0) {
+        findings.push(_finding("NOTICE", "GEOMETRY",
+            "All turns within limits — no path overshoot",
+            [], "All turn angles are below 45° — no significant path deviation expected.",
+            "No impact — flight path will closely match planned path.",
+            "No action required", ""))
+    }
 }
 
 function _validateClimbs(climbs, findings) {
+    var failCount = 0
     for (var i = 0; i < climbs.length; i++) {
         var c = climbs[i]
 
         if (c.requiredRate > c.rateLimit * 2) {
+            failCount++
             findings.push(_finding("CRITICAL", "GEOMETRY",
                 c.direction + " impossible: WP " + c.fromIndex + " → " + c.toIndex,
                 [c.fromIndex, c.toIndex],
@@ -687,6 +785,7 @@ function _validateClimbs(climbs, findings) {
                 "Increase horizontal distance or reduce altitude change",
                 c.rateLimitSource + " = " + c.rateLimit.toFixed(1) + " m/s"))
         } else if (!c.feasibleAtCruise) {
+            failCount++
             findings.push(_finding("WARNING", "GEOMETRY",
                 c.direction + " steep: WP " + c.fromIndex + " → " + c.toIndex,
                 [c.fromIndex, c.toIndex],
@@ -697,12 +796,22 @@ function _validateClimbs(climbs, findings) {
                 c.rateLimitSource + " = " + c.rateLimit.toFixed(1) + " m/s"))
         }
     }
+    if (failCount === 0) {
+        findings.push(_finding("NOTICE", "GEOMETRY",
+            "All climb/descent rates within limits",
+            [], "All altitude changes are achievable at cruise speed.",
+            "No impact — all gradients are within aircraft capability.",
+            "No action required", ""))
+    }
 }
 
 function _validateSpacing(spacings, findings) {
+    var failCount = 0
     for (var i = 0; i < spacings.length; i++) {
         var s = spacings[i]
+
         if (s.classification === "TOO_SHORT") {
+            failCount++
             findings.push(_finding("WARNING", "GEOMETRY",
                 "Waypoints too close: WP " + s.fromIndex + " → " + s.toIndex,
                 [s.fromIndex, s.toIndex],
@@ -712,7 +821,9 @@ function _validateSpacing(spacings, findings) {
                 "m) is significant relative to segment length.",
                 "Increase spacing or merge nearby waypoints", "Aircraft config: minSpacing = " + s.minSpacing + "m"))
         }
+
         if (s.overlapWithNext) {
+            failCount++
             findings.push(_finding("WARNING", "ARDUPILOT",
                 "Acceptance radius overlap: WP " + s.fromIndex + " → " + s.toIndex,
                 [s.fromIndex, s.toIndex],
@@ -723,14 +834,23 @@ function _validateSpacing(spacings, findings) {
                 "WP_RADIUS = " + s.wpAcceptanceRadius.toFixed(0) + "m"))
         }
     }
+    if (failCount === 0 && spacings.length > 0) {
+        findings.push(_finding("NOTICE", "GEOMETRY",
+            "Waypoint spacing adequate",
+            [], "All segments meet minimum spacing requirements. No acceptance radius overlaps.",
+            "No impact — waypoint spacing is sufficient for GPS navigation.",
+            "No action required", ""))
+    }
 }
 
 function _validateAltitudes(points, limits, findings) {
+    var failCount = 0
     for (var i = 0; i < points.length; i++) {
         var p = points[i]
         if (!p.isNavigation || !p.isValid || p.type === "HOME" || p.type === "RTL") continue
 
         if (limits.maxAltitude > 0 && p.altRel > limits.maxAltitude) {
+            failCount++
             findings.push(_finding("CRITICAL", "AIRCRAFT",
                 "Altitude exceeds ceiling at WP " + p.displayIndex,
                 [p.displayIndex],
@@ -740,10 +860,18 @@ function _validateAltitudes(points, limits, findings) {
                 (limits.sources.maxAltitude || "ALT_MAX") + " = " + limits.maxAltitude.toFixed(0) + "m"))
         }
     }
+    if (failCount === 0) {
+        var ceilText = (limits.maxAltitude > 0) ? " (ceiling: " + limits.maxAltitude.toFixed(0) + "m)" : ""
+        findings.push(_finding("NOTICE", "AIRCRAFT",
+            "All altitudes within ceiling" + ceilText,
+            [], "No waypoint exceeds the maximum altitude limit.",
+            "No impact — all altitudes are safe.",
+            "No action required", ""))
+    }
 }
 
-function _validateConsistency(points, findings) {
-    // Check: Takeoff is not first navigation item
+function _validateConsistency(points, structure, findings) {
+    // RULE-C01: Takeoff is not first navigation item
     var firstNav = null
     for (var i = 0; i < points.length; i++) {
         if (points[i].isNavigation && points[i].type !== "HOME") {
@@ -758,13 +886,22 @@ function _validateConsistency(points, findings) {
             "First navigation item is " + firstNav.type + " instead of TAKEOFF.",
             "Aircraft may not launch correctly.",
             "Move Takeoff to be the first item after Home", "ArduPilot Mission Protocol"))
+    } else if (firstNav && firstNav.type === "TAKEOFF") {
+        findings.push(_finding("NOTICE", "CONSISTENCY",
+            "Takeoff is first command",
+            [firstNav.displayIndex],
+            "Takeoff is correctly placed as the first navigation item after Home.",
+            "No impact — launch sequence is correct.",
+            "No action required", "ArduPilot Mission Protocol"))
     }
 
-    // Check: commands after RTL
+    // RULE-C02: Commands after RTL
     var rtlFound = false
+    var cmdsAfterRTL = false
     for (var j = 0; j < points.length; j++) {
         if (points[j].type === "RTL") rtlFound = true
         else if (rtlFound && points[j].isNavigation) {
+            cmdsAfterRTL = true
             findings.push(_finding("WARNING", "CONSISTENCY",
                 "Commands after RTL will not execute",
                 [points[j].displayIndex],
@@ -772,6 +909,48 @@ function _validateConsistency(points, findings) {
                 "These waypoints are unreachable.", "Remove items after RTL or move RTL to the end",
                 "ArduPilot Mission Protocol"))
             break
+        }
+    }
+    if (rtlFound && !cmdsAfterRTL) {
+        findings.push(_finding("NOTICE", "CONSISTENCY",
+            "No unreachable commands after RTL",
+            [], "RTL is the last action — no navigation items are placed after it.",
+            "No impact — all waypoints are reachable.",
+            "No action required", "ArduPilot Mission Protocol"))
+    }
+
+    // RULE-C03: WP3 minimum 5 km from Home
+    if (structure.hasHome && structure.homeCoordinate) {
+        var wp3Point = null
+        for (var k = 0; k < points.length; k++) {
+            if (points[k].displayIndex === 3) {
+                wp3Point = points[k]
+                break
+            }
+        }
+        if (wp3Point && wp3Point.isValid) {
+            var distWP3 = _haversineDistance(
+                structure.homeCoordinate.lat, structure.homeCoordinate.lon,
+                wp3Point.lat, wp3Point.lon
+            )
+            if (distWP3 < 5000) {
+                findings.push(_finding("CRITICAL", "CONSISTENCY",
+                    "WP3 too close to Home: " + distWP3.toFixed(0) + "m",
+                    [3],
+                    "WP3 is " + distWP3.toFixed(0) + "m from Home. Minimum required: 5000m.",
+                    "Mission does not meet minimum standoff distance for WP3.",
+                    "Move WP3 at least 5 km from Home position",
+                    "Mission requirement: WP3 ≥ 5 km"))
+            } else {
+                var distKm = (distWP3 / 1000).toFixed(1)
+                findings.push(_finding("NOTICE", "CONSISTENCY",
+                    "WP3 distance OK: " + distKm + " km from Home",
+                    [3],
+                    "WP3 is " + distKm + " km from Home. Minimum required: 5 km. ✓ Passed.",
+                    "No impact — standoff distance requirement met.",
+                    "No action required",
+                    "Mission requirement: WP3 ≥ 5 km"))
+            }
         }
     }
 }
@@ -789,7 +968,6 @@ function _finding(severity, category, problem, waypoints, explanation, impact, r
     }
 }
 
-
 // ═══════════════════════════════════════════════════════════════════════════
 //  [5] QUALITY ASSESSMENT
 //  Recommendations only — never CRITICAL or WARNING. Only NOTICE.
@@ -797,7 +975,6 @@ function _finding(severity, category, problem, waypoints, explanation, impact, r
 
 function assessQuality(relationships, geometrySummary) {
     var assessments = []
-
     var path = relationships.path
 
     // ── Zig-zag pattern ──
@@ -851,7 +1028,6 @@ function assessQuality(relationships, geometrySummary) {
     return assessments
 }
 
-
 // ═══════════════════════════════════════════════════════════════════════════
 //  [6] ENGINEERING REPORT
 //  Assembles everything into a structured report for the UI.
@@ -903,7 +1079,7 @@ function generateReport(findings, assessments, geometrySummary, structure, limit
     }
 
     // ── Responsibility acknowledgment ──
-    var requiresAcknowledgment = (status === "REVIEW_REQUIRED" || status === "READY_WITH_ADVISORIES")
+    var requiresAcknowledgment = (counts.critical > 0 || counts.warning > 0)
 
     return {
         status:                 status,
@@ -916,14 +1092,12 @@ function generateReport(findings, assessments, geometrySummary, structure, limit
     }
 }
 
-
 // ═══════════════════════════════════════════════════════════════════════════
 //  MAIN ENTRY POINT
 //  Runs the complete review pipeline: 1 → 2 → 3 → 4 → 5 → 6
 // ═══════════════════════════════════════════════════════════════════════════
 
 function reviewMission(visualItems, homePosition, effectiveLimits) {
-
     // [1] Interpret mission
     var mission = interpretMission(visualItems, homePosition)
 

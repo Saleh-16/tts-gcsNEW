@@ -14,19 +14,25 @@
 // ============================================================================
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  DEFAULT AIRCRAFT CONFIG
-//  Fixed for this aircraft type. NOT entered every mission.
-//  Change these values once when the aircraft changes.
+//  DEFAULT AIRCRAFT CONFIG — TTS GROUP measured values (July 2026)
+//
+//  These are the MOST RESTRICTIVE options from flight data analysis.
+//  Choosing the most restrictive = maximum warnings = minimum liability.
+//  If the system warns and the operator ignores → operator's responsibility.
+//  If the system doesn't warn and something fails → our responsibility.
+//
+//  Source:  Flight log analysis (BIN dataflash), confidence noted per value.
+//  Policy:  Conservative values chosen deliberately — see SDD ED-04.
 // ─────────────────────────────────────────────────────────────────────────────
 var _defaultAircraftConfig = {
-    cruiseSpeed:        15.0,   // m/s
-    stallSpeed:         10.0,   // m/s
-    maxSpeed:           25.0,   // m/s
-    maxBankAngle:       45.0,   // degrees
-    maxClimbRate:        5.0,   // m/s
-    maxDescentRate:      4.0,   // m/s
-    maxAltitude:       500.0,   // meters (above home)
-    minWaypointSpacing: 20.0    // meters
+    cruiseSpeed:        32.5,   // m/s  — option C (highest from logs → largest turn radius → most warnings)    [confirmed]
+    stallSpeed:         19.6,   // m/s  — option C (highest safety margin → narrowest speed envelope)            [estimated]
+    maxSpeed:           39.0,   // m/s  — option C (lowest ceiling → most restrictive)                          [estimated]
+    maxBankAngle:       28.0,   // deg  — option B (max observed in flight → realistic, not theoretical 45°)    [estimated]
+    maxClimbRate:        2.9,   // m/s  — option C (lowest capability → catches more steep climbs)              [confirmed]
+    maxDescentRate:      1.8,   // m/s  — option C (lowest safe rate → catches more steep descents)             [confirmed]
+    maxAltitude:       144.0,   // m    — option C (lowest ceiling above home → catches more altitude violations)[confirmed]
+    minWaypointSpacing: 40.0    // m    — option B (largest minimum → catches more close-spacing issues)        [estimated]
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -45,23 +51,15 @@ var _parameterMap = {
     "WP_RADIUS":        { field: "wpAcceptanceRadius", divisor: 1.0  }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  readArduPilotParams(vehicle)
-//  Reads relevant parameters from the connected vehicle.
-//  Returns an object with converted values, or empty object if not connected.
-// ─────────────────────────────────────────────────────────────────────────────
 function readArduPilotParams(vehicle) {
     var params = {}
-
     if (!vehicle || !vehicle.parameterManager) {
         return params
     }
-
     var paramNames = Object.keys(_parameterMap)
     for (var i = 0; i < paramNames.length; i++) {
         var paramName = paramNames[i]
         var mapping = _parameterMap[paramName]
-
         try {
             var fact = vehicle.parameterManager.getParameter(-1, paramName)
             if (fact && fact.rawValue !== undefined && !isNaN(fact.rawValue)) {
@@ -70,66 +68,39 @@ function readArduPilotParams(vehicle) {
                 params[mapping.field + "_raw"] = fact.rawValue
             }
         } catch (e) {
-            // Parameter not available — skip silently
         }
     }
-
     return params
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  parseParamText(text)
-//  Parses a .param file content (format: "PARAM_NAME,VALUE" per line)
-//  Returns an object with converted values matching the field names
-//  used by resolve().
-// ─────────────────────────────────────────────────────────────────────────────
 function parseParamText(text) {
     var params = {}
     if (!text) return params
-
     var lines = text.split('\n')
     for (var i = 0; i < lines.length; i++) {
         var line = lines[i].trim()
         if (line === '' || line.charAt(0) === '#') continue
-
         var comma = line.indexOf(',')
         if (comma < 0) continue
-
         var paramName = line.substring(0, comma).trim()
         var paramValue = parseFloat(line.substring(comma + 1).trim())
         if (isNaN(paramValue)) continue
-
-        // Map to internal field names
         var mapping = _parameterMap[paramName]
         if (mapping) {
             params[mapping.field] = paramValue / mapping.divisor
             params[mapping.field + "_source"] = paramName
             params[mapping.field + "_raw"] = paramValue
         }
-
-        // Store ALL params for display (not just mapped ones)
         params["_raw_" + paramName] = paramValue
     }
-
     return params
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  resolveFromParamText(paramText)
-//  Convenience: parse .param file text and resolve against aircraft config.
-//  Used when no vehicle is connected (offline planning with a .param file).
-// ─────────────────────────────────────────────────────────────────────────────
 function resolveFromParamText(paramText) {
     var ap = parseParamText(paramText)
     return resolve(_defaultAircraftConfig, ap)
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  getParamStatus(parsedParams, vehicle)
-//  Returns before/after comparison.
-//  "Before" = current vehicle value (or default if not connected).
-//  "After"  = value from .param file (or default if not in file).
-// ─────────────────────────────────────────────────────────────────────────────
 function getParamStatus(parsedParams, vehicle) {
     var critical = [
         { param: "TRIM_ARSPD_CM",  field: "cruiseSpeed",    label: "Cruise Speed",      unit: "m/s",  defaultVal: _defaultAircraftConfig.cruiseSpeed,    divisor: 100 },
@@ -141,12 +112,9 @@ function getParamStatus(parsedParams, vehicle) {
         { param: "ALT_MAX",        field: "maxAltitude",     label: "Max Altitude",      unit: "m",    defaultVal: _defaultAircraftConfig.maxAltitude,    divisor: 1 },
         { param: "WP_RADIUS",      field: "wpAcceptanceRadius", label: "WP Radius",      unit: "m",    defaultVal: 30,                                   divisor: 1 }
     ]
-
     var result = []
     for (var i = 0; i < critical.length; i++) {
         var c = critical[i]
-
-        // ── Read "Before" from connected vehicle ──
         var vehicleVal = c.defaultVal
         var vehicleSource = "default"
         if (vehicle && vehicle.parameterManager) {
@@ -158,14 +126,9 @@ function getParamStatus(parsedParams, vehicle) {
                 }
             } catch (e) { }
         }
-
-        // ── Read "After" from .param file ──
         var fileFound = parsedParams && parsedParams[c.field] !== undefined
         var fileVal = fileFound ? parsedParams[c.field] : vehicleVal
-
-        // ── Detect change ──
         var changed = fileFound && (Math.abs(fileVal - vehicleVal) > 0.01)
-
         result.push({
             param:          c.param,
             label:          c.label,
@@ -183,23 +146,13 @@ function getParamStatus(parsedParams, vehicle) {
     return result
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  uploadParamsToVehicle(parsedParams, vehicle)
-//  Writes .param file values to the connected vehicle.
-//  Returns an array of { param, oldValue, newValue, success } for each write.
-// ─────────────────────────────────────────────────────────────────────────────
 function uploadParamsToVehicle(parsedParams, vehicle) {
     if (!vehicle || !vehicle.parameterManager || !parsedParams) return []
-
     var results = []
     var paramNames = Object.keys(parsedParams)
-
     for (var i = 0; i < paramNames.length; i++) {
         var key = paramNames[i]
-        // Skip internal keys (prefixed with _raw_)
         if (key.startsWith("_raw_") || key.endsWith("_source") || key.endsWith("_raw")) continue
-
-        // Find the ArduPilot param name from the field name
         var apName = null
         var apKeys = Object.keys(_parameterMap)
         for (var j = 0; j < apKeys.length; j++) {
@@ -209,46 +162,25 @@ function uploadParamsToVehicle(parsedParams, vehicle) {
             }
         }
         if (!apName) continue
-
-        // Get raw value from parsed params
         var rawVal = parsedParams["_raw_" + apName]
         if (rawVal === undefined) continue
-
         try {
             var fact = vehicle.parameterManager.getParameter(-1, apName)
             if (fact) {
                 var oldVal = fact.rawValue
                 fact.rawValue = rawVal
-                results.push({
-                    param:      apName,
-                    oldValue:   oldVal,
-                    newValue:   rawVal,
-                    success:    true
-                })
+                results.push({ param: apName, oldValue: oldVal, newValue: rawVal, success: true })
             }
         } catch (e) {
-            results.push({
-                param:      apName,
-                oldValue:   0,
-                newValue:   rawVal,
-                success:    false,
-                error:      e.toString()
-            })
+            results.push({ param: apName, oldValue: 0, newValue: rawVal, success: false, error: e.toString() })
         }
     }
-
     return results
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  getAllParamsFromFile(paramText)
-//  Returns ALL parameters from a .param file (not just mapped ones).
-//  Used for uploading all params to vehicle.
-// ─────────────────────────────────────────────────────────────────────────────
 function getAllParamsFromFile(paramText) {
     var params = []
     if (!paramText) return params
-
     var lines = paramText.split('\n')
     for (var i = 0; i < lines.length; i++) {
         var line = lines[i].trim()
@@ -264,17 +196,10 @@ function getAllParamsFromFile(paramText) {
     return params
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  uploadAllParamsToVehicle(paramText, vehicle)
-//  Writes ALL parameters from .param file to vehicle.
-//  Returns before/after report.
-// ─────────────────────────────────────────────────────────────────────────────
 function uploadAllParamsToVehicle(paramText, vehicle) {
     if (!vehicle || !vehicle.parameterManager || !paramText) return []
-
     var allParams = getAllParamsFromFile(paramText)
     var results = []
-
     for (var i = 0; i < allParams.length; i++) {
         var p = allParams[i]
         try {
@@ -285,65 +210,24 @@ function uploadAllParamsToVehicle(paramText, vehicle) {
                 if (changed) {
                     fact.rawValue = p.value
                 }
-                results.push({
-                    param:      p.param,
-                    oldValue:   oldVal,
-                    newValue:   p.value,
-                    changed:    changed,
-                    success:    true
-                })
+                results.push({ param: p.param, oldValue: oldVal, newValue: p.value, changed: changed, success: true })
             }
         } catch (e) {
-            results.push({
-                param:      p.param,
-                oldValue:   0,
-                newValue:   p.value,
-                changed:    true,
-                success:    false
-            })
+            results.push({ param: p.param, oldValue: 0, newValue: p.value, changed: true, success: false })
         }
     }
-
     return results
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  resolve(aircraftConfig, arduPilotParams)
-//
-//  Merges two sources into EffectiveLimits.
-//  Rule: MOST RESTRICTIVE always wins.
-//
-//  For "maximum" limits: use the SMALLER value    (min of two)
-//  For "minimum" limits: use the LARGER value     (max of two)
-//
-//  Each resolved limit records its source for the engineering report.
-// ─────────────────────────────────────────────────────────────────────────────
 function resolve(aircraftConfig, arduPilotParams) {
-
     var ac = aircraftConfig || _defaultAircraftConfig
     var ap = arduPilotParams || {}
-
     var limits = {
-        // ── Resolved values ──
-        cruiseSpeed:        0,
-        stallSpeed:         0,
-        minSpeed:           0,
-        maxSpeed:           0,
-        maxBankAngle:       0,
-        maxClimbRate:       0,
-        maxDescentRate:     0,
-        maxAltitude:        0,
-        minWaypointSpacing: 0,
-        wpAcceptanceRadius: 0,
-
-        // ── Source tracking ──
-        sources: {},
-
-        // ── Warnings (when a param is missing) ──
-        warnings: []
+        cruiseSpeed: 0, stallSpeed: 0, minSpeed: 0, maxSpeed: 0,
+        maxBankAngle: 0, maxClimbRate: 0, maxDescentRate: 0,
+        maxAltitude: 0, minWaypointSpacing: 0, wpAcceptanceRadius: 0,
+        sources: {}, warnings: []
     }
-
-    // ── Helper: resolve a "maximum" limit (smaller wins) ──
     function resolveMax(fieldName, acValue, apValue, apParamName) {
         if (apValue !== undefined && !isNaN(apValue) && apValue > 0) {
             if (acValue > 0) {
@@ -361,8 +245,6 @@ function resolve(aircraftConfig, arduPilotParams) {
             }
         }
     }
-
-    // ── Helper: resolve a "minimum" limit (larger wins) ──
     function resolveMin(fieldName, acValue, apValue, apParamName) {
         if (apValue !== undefined && !isNaN(apValue) && apValue > 0) {
             if (acValue > 0) {
@@ -377,68 +259,31 @@ function resolve(aircraftConfig, arduPilotParams) {
             limits.sources[fieldName] = "aircraft_config"
         }
     }
-
-    // ── Resolve each limit ──
-
-    // Cruise speed: most restrictive max
     resolveMax("cruiseSpeed", ac.cruiseSpeed || 0, ap.cruiseSpeed, "TRIM_ARSPD_CM")
-
-    // Stall speed: from aircraft only (ArduPilot doesn't have a direct stall param)
     limits.stallSpeed = ac.stallSpeed || 0
     limits.sources.stallSpeed = "aircraft_config"
-
-    // Min speed: most restrictive min (higher wins = more restrictive)
     resolveMin("minSpeed", ac.stallSpeed || 0, ap.minSpeed, "ARSPD_FBW_MIN")
-
-    // Max speed: most restrictive max (lower wins)
     resolveMax("maxSpeed", ac.maxSpeed || 0, ap.maxSpeed, "ARSPD_FBW_MAX")
-
-    // Max bank angle: most restrictive (lower wins)
     resolveMax("maxBankAngle", ac.maxBankAngle || 0, ap.maxBankAngle, "ROLL_LIMIT_DEG")
-
-    // Max climb rate: most restrictive (lower wins)
     resolveMax("maxClimbRate", ac.maxClimbRate || 0, ap.maxClimbRate, "TECS_CLMB_MAX")
-
-    // Max descent rate: most restrictive (lower wins)
     resolveMax("maxDescentRate", ac.maxDescentRate || 0, ap.maxDescentRate, "TECS_SINK_MAX")
-
-    // Max altitude: most restrictive (lower wins)
     resolveMax("maxAltitude", ac.maxAltitude || 0, ap.maxAltitude, "ALT_MAX")
-
-    // Min waypoint spacing: from aircraft config only
     limits.minWaypointSpacing = ac.minWaypointSpacing || 20.0
     limits.sources.minWaypointSpacing = "aircraft_config"
-
-    // WP acceptance radius: from ArduPilot only
     limits.wpAcceptanceRadius = ap.wpAcceptanceRadius || 30.0
     limits.sources.wpAcceptanceRadius = ap.wpAcceptanceRadius ? "WP_RADIUS" : "default"
-
     return limits
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  resolveFromVehicle(vehicle)
-//
-//  Convenience function: reads ArduPilot params from vehicle and resolves.
-//  If vehicle is null/disconnected, uses aircraft config only.
-// ─────────────────────────────────────────────────────────────────────────────
 function resolveFromVehicle(vehicle) {
     var ap = readArduPilotParams(vehicle)
     return resolve(_defaultAircraftConfig, ap)
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  getDefaultAircraftConfig()
-//  Returns a copy of the default aircraft config for reference/display.
-// ─────────────────────────────────────────────────────────────────────────────
 function getDefaultAircraftConfig() {
     return JSON.parse(JSON.stringify(_defaultAircraftConfig))
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  setAircraftConfig(config)
-//  Updates the aircraft config. Call once when aircraft type changes.
-// ─────────────────────────────────────────────────────────────────────────────
 function setAircraftConfig(config) {
     if (!config) return
     var fields = Object.keys(_defaultAircraftConfig)

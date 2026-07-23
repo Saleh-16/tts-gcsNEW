@@ -29,7 +29,7 @@ MissionSettingsItem::MissionSettingsItem(PlanMasterController* masterController,
     _plannedHomePositionAltitudeFact.setRawValue    (_plannedHomePositionAltitudeFact.rawDefaultValue());
     setHomePositionSpecialCase(true);
 
-    _cameraSection.setAvailable(true);
+    _cameraSection.setAvailable(false);
     _speedSection.setAvailable(true);
 
     connect(this,               &MissionSettingsItem::specifyMissionFlightSpeedChanged, this, &MissionSettingsItem::_setDirtyAndUpdateLastSequenceNumber);

@@ -133,7 +133,6 @@ Item {
     // ── Remaining display-unit labels (speed / wind / voltage) ──────────────
     property string _unitSpd:    _factAir ? _factAir.units : qsTr("m/s")
     property string _unitGndSpd: _factGnd ? _factGnd.units : qsTr("m/s")
-
     // ── Speed display adaptation (km/s needs smaller steps + more decimals) ──
     property bool   _isSmallSpeedUnit: _unitSpd === "km/s"
     property real   _spdStep:          _isSmallSpeedUnit ? 0.005 : 20
@@ -141,6 +140,23 @@ Item {
     property int    _gndSpdDecimals:   (_unitGndSpd === "km/s") ? 3 : 1
     property string _unitVolt:   _bat0 && _bat0.voltage ? _bat0.voltage.units : qsTr("V")
     property string _unitWndSpd: _ok ? _v.wind.speed.units  : qsTr("m/s")
+
+    // ── RELATIVE WIND (aircraft body frame) ─────────────────────────────
+    //     θ = WindDirection − Heading, normalized to [−180, +180].
+    //       0° = headwind   +90° = from starboard   −90° = from port   ±180° = tailwind
+    //     _windSpdDisp uses display-unit speed so H/X numbers match the
+    //     main wind readout (m/s, kn, km/h — whatever the user selected).
+    property real _windDirAbs:  _ok && _v.wind.direction.value !== undefined && !isNaN(_v.wind.direction.value) ? _v.wind.direction.value : 0
+    property real _windSpdDisp: _ok && _v.wind.speed.value     !== undefined && !isNaN(_v.wind.speed.value)     ? _v.wind.speed.value     : 0
+    property real _windRel: {
+        var r = _windDirAbs - _rawHdg
+        while (r >  180) r -= 360
+        while (r < -180) r += 360
+        return r
+    }
+    property real _headwind:  _windSpdDisp * Math.cos(_windRel * Math.PI / 180)   // +ve = headwind, −ve = tailwind
+    property real _crosswind: _windSpdDisp * Math.sin(_windRel * Math.PI / 180)   // +ve = from starboard, −ve = from port
+
     // ── Ground-speed session MAX / MIN tracker (updated on every change) ────
     property real _spdMax:  0
     property real _spdMin:  0
@@ -681,22 +697,6 @@ Item {
                         // Empty content area (real map wiring deferred)
                         Item { anchors.top: mapHeader.bottom; anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom }
                         // ── MAP ZOOM CONTROL (+/-) ──────────────────────────────
-                        //     Floating +/- buttons over the tactical map, pinned to
-                        //     the bottom-right corner. mapPanel is transparent and sits
-                        //     ON TOP of QGC's real FlyViewMap, so these buttons appear
-                        //     over the live map. Each button has its OWN MouseArea, so
-                        //     only taps directly on + / - are captured; the rest of the
-                        //     map area still passes drag/pinch through to the real map
-                        //     underneath.
-                        //
-                        //     They act on root.mapControl (the FlyViewMap handle passed
-                        //     in from FlyView.qml). zoomLevel / minimumZoomLevel /
-                        //     maximumZoomLevel are standard QtLocation Map properties.
-                        //     The `if (root.mapControl)` guard prevents a crash when no
-                        //     map is wired up yet.
-                        //
-                        //     All sizes use root._u so the control scales with every
-                        //     other element in this file.
                         Rectangle {
                             id:                   mapZoom
                             anchors.right:        parent.right
@@ -709,8 +709,7 @@ Item {
                             color:  Qt.rgba(0, 0, 0, 0.55)
                             border.color: root.cNeonMid
                             border.width: 1
-                            z: 300   // above the empty content Item / map layer
-                            // ── + (Zoom In) — top half ──────────────────────────
+                            z: 300
                             Rectangle {
                                 id: zoomInBtn
                                 anchors.top:     parent.top
@@ -718,7 +717,6 @@ Item {
                                 anchors.right:   parent.right
                                 anchors.margins: 1
                                 height: parent.height / 2 - 1
-                                // Hover / press feedback
                                 color: zoomInMA.pressed      ? root.cNeonMid
                                      : zoomInMA.containsMouse ? Qt.rgba(0, 1, 0.53, 0.15)
                                      : "transparent"
@@ -734,7 +732,6 @@ Item {
                                     anchors.fill: parent
                                     hoverEnabled: true
                                     onClicked: {
-                                        // Step zoom in by 1 level, clamped to the map max
                                         if (root.mapControl)
                                             root.mapControl.zoomLevel = Math.min(
                                                 root.mapControl.maximumZoomLevel,
@@ -742,7 +739,6 @@ Item {
                                     }
                                 }
                             }
-                            // ── Divider between + and − ─────────────────────────
                             Rectangle {
                                 anchors.verticalCenter: parent.verticalCenter
                                 anchors.left:        parent.left
@@ -752,7 +748,6 @@ Item {
                                 height: 1
                                 color:  root.cNeonMid
                             }
-                            // ── − (Zoom Out) — bottom half ──────────────────────
                             Rectangle {
                                 id: zoomOutBtn
                                 anchors.bottom:  parent.bottom
@@ -760,14 +755,13 @@ Item {
                                 anchors.right:   parent.right
                                 anchors.margins: 1
                                 height: parent.height / 2 - 1
-                                // Hover / press feedback
                                 color: zoomOutMA.pressed      ? root.cNeonMid
                                      : zoomOutMA.containsMouse ? Qt.rgba(0, 1, 0.53, 0.15)
                                      : "transparent"
                                 Behavior on color { ColorAnimation { duration: 120 } }
                                 Text {
                                     anchors.centerIn: parent
-                                    text: "\u2212"   // real minus sign (−), not a hyphen
+                                    text: "\u2212"
                                     font.pixelSize: root._u * 2.6; font.bold: true; font.family: "monospace"
                                     color: zoomOutMA.pressed ? root.cBg : root.cNeon
                                 }
@@ -776,7 +770,6 @@ Item {
                                     anchors.fill: parent
                                     hoverEnabled: true
                                     onClicked: {
-                                        // Step zoom out by 1 level, clamped to the map min
                                         if (root.mapControl)
                                             root.mapControl.zoomLevel = Math.max(
                                                 root.mapControl.minimumZoomLevel,
@@ -785,7 +778,6 @@ Item {
                                 }
                             }
                         }
-                        // ── END MAP ZOOM CONTROL ────────────────────────────────
                     }
                     // Vertical divider between the two panels
                     Rectangle { width: 1; height:parent.height; color:root.cBorderHi }
@@ -794,7 +786,6 @@ Item {
                         id: missionPanel
                         width: parent.width - mapPanel.width - 1; height: parent.height
                         color: root.cPanel; border.color: root.cBorder; border.width: 1
-                        // Panel header bar
                         Rectangle {
                             id: missionHeader
                             anchors.top: parent.top; anchors.left: parent.left; anchors.right: parent.right
@@ -808,15 +799,12 @@ Item {
                                 font.family: "monospace"; color: root.cWhite
                             }
                         }
-                        // ── Mission items table (data + header + rows) ───────
                         Item {
                             id: missionTableRoot
                             anchors.top: missionHeader.bottom
                             anchors.left: parent.left
                             anchors.right: parent.right
                             anchors.bottom: parent.bottom
-                            // Prefer the same source as the map (planMasterController);
-                            // fall back to the vehicle's own missionManager if empty
                             readonly property var _planItems: {
                                 try {
                                     if (typeof globals !== "undefined" && globals.planMasterControllerFlyView
@@ -831,8 +819,6 @@ Item {
                             readonly property var _missionItems: (_planItems && _planItems.count > 0) ? _planItems : _vehicleItems
                             readonly property int _itemCount: _missionItems ? _missionItems.count : 0
                             readonly property int _curSeq: root._ok && root._v.missionItemIndex && root._v.missionItemIndex.value !== undefined ? root._v.missionItemIndex.value : -1
-                            // Keep only real navigation points (those with an actual
-                            // altitude), dropping non-nav commands like camera setup
                             readonly property var _validIndices: {
                                 var arr = []
                                 if (!_missionItems) return arr
@@ -844,7 +830,6 @@ Item {
                                 }
                                 return arr
                             }
-                            // Table header row (relative column widths cover full width)
                             Item {
                                 id: tableHeader
                                 anchors.top: parent.top
@@ -866,16 +851,7 @@ Item {
                                     Text { width: tableHeader.cStat;  height: parent.height; verticalAlignment: Text.AlignVCenter; text: qsTr("STATUS");   font.pixelSize: root._u * 1.4; font.bold: true; font.family: "monospace"; color: root.cGrey }
                                 }
                             }
-                            // Header underline
                             Rectangle { anchors.top: tableHeader.bottom; anchors.left: parent.left; anchors.right: parent.right; height: 1; color: root.cBorderHi }
-                            // Table rows (read from the real vehicle mission).
-                            // Fix note: instead of reaching data via parent.parent inside
-                            // the delegate (unreliable — ListView inserts an internal
-                            // contentItem so the chain returns null), we pass the data as
-                            // direct properties on the ListView and read them via
-                            // ListView.view.xxx. Also: anchors.fill was removed from inside
-                            // Row (illegal), and the delegate is an Item wrapping a Row
-                            // rather than being a Row itself.
                             ListView {
                                 id: missionListView
                                 anchors.top: tableHeader.bottom
@@ -892,28 +868,22 @@ Item {
                                     id: rowRoot
                                     width: ListView.view.width
                                     height: root._u * 3.6
-                                    // modelData = real index into the original mission array
-                                    // (after filtering); index = display row order (used for #)
                                     property int realIndex: modelData
                                     property var _mi: ListView.view.missionItemsRef ? ListView.view.missionItemsRef.get(realIndex) : null
                                     readonly property bool _isCurrent: realIndex === ListView.view.curSeqRef
                                     readonly property bool _isDone: ListView.view.curSeqRef >= 0 && realIndex < ListView.view.curSeqRef
-                                    // Alternating row background
                                     Rectangle {
                                         anchors.fill: parent
                                         color: index % 2 === 0 ? Qt.rgba(1,1,1,0.02) : "transparent"
                                     }
-                                    // Row cells
                                     Row {
                                         anchors.fill: parent
-                                        // # (display order)
                                         Text {
                                             width: tableHeader.cSeq; height: parent.height; verticalAlignment: Text.AlignVCenter
                                             text: (index + 1).toString()
                                             font.pixelSize: root._u * 1.4; font.family: "monospace"; color: root.cWhite
                                             leftPadding: root._u * 0.6
                                         }
-                                        // TYPE (command name, with sensible fallbacks)
                                         Text {
                                             width: tableHeader.cType; height: parent.height; verticalAlignment: Text.AlignVCenter
                                             text: rowRoot._mi && rowRoot._mi.commandName !== undefined ? rowRoot._mi.commandName
@@ -921,14 +891,12 @@ Item {
                                             font.pixelSize: root._u * 1.3; font.bold: true; font.family: "monospace"; color: root.cNeon
                                             elide: Text.ElideRight
                                         }
-                                        // NAME
                                         Text {
                                             width: tableHeader.cName; height: parent.height; verticalAlignment: Text.AlignVCenter
                                             text: rowRoot._mi && rowRoot._mi.missionItemName !== undefined ? rowRoot._mi.missionItemName : ("WPT-" + (realIndex + 1))
                                             font.pixelSize: root._u * 1.3; font.family: "monospace"; color: root.cWhite
                                             elide: Text.ElideRight
                                         }
-                                        // COORDINATES
                                         Text {
                                             width: tableHeader.cCoord; height: parent.height; verticalAlignment: Text.AlignVCenter
                                             text: rowRoot._mi && rowRoot._mi.coordinate !== undefined
@@ -937,7 +905,6 @@ Item {
                                             font.pixelSize: root._u * 1.2; font.family: "monospace"; color: root.cWhite
                                             elide: Text.ElideRight
                                         }
-                                        // STATUS (ACTIVE / DONE / PENDING)
                                         Text {
                                             width: tableHeader.cStat; height: parent.height; verticalAlignment: Text.AlignVCenter
                                             text: rowRoot._isCurrent ? qsTr("ACTIVE") : (rowRoot._isDone ? qsTr("DONE") : qsTr("PENDING"))
@@ -946,7 +913,6 @@ Item {
                                         }
                                     }
                                 }
-                                // Empty-state message when there is no mission
                                 Text {
                                     anchors.centerIn: parent
                                     visible: parent.count === 0
@@ -963,69 +929,21 @@ Item {
                 id: statusBar
                 width: parent.width; height: root.botBarH
                 color: root.cPanel; border.color: root.cBorder; border.width: 1
-                // Top divider line
                 Rectangle { anchors.top: parent.top; anchors.left: parent.left; anchors.right: parent.right; height: 1; color: root.cBorderHi }
                 Row {
                     anchors.fill: parent
                     spacing: 0
-                    // ── Section 1: WIND (speed + direction + rotating arrow) ─
-                    Item {
-                        width: parent.width / 6; height: parent.height
-                        Rectangle { anchors.right:parent.right; anchors.top:parent.top; anchors.bottom:parent.bottom; width: 1; color:root.cBorder }
-                        // Section title (pinned top)
-                        Text {
-                            text: qsTr("WIND"); font.pixelSize: root._u * 1.725; font.bold: true; font.letterSpacing: root._u * 0.225; color:root.cWhite; font.family:"monospace"
-                            anchors.top: parent.top; anchors.topMargin: root._u * 0.9
-                            anchors.left: parent.left; anchors.leftMargin: root._u * 2.4
-                        }
-                        // Section content (centred below title)
-                        Row {
-                            anchors.verticalCenter: parent.verticalCenter
-                            anchors.verticalCenterOffset: root._u * 1.35
-                            anchors.left: parent.left; anchors.leftMargin: root._u * 2.4
-                            spacing: root._u * 1.5
-                            // Wind arrow — rotates to the real wind direction
-                            Canvas {
-                                id: windArrowCanvas
-                                width: root._u * 4.5; height: root._u * 4.5; anchors.verticalCenter:parent.verticalCenter
-                                property real windDeg: root._ok && root._v.wind.direction.value !== undefined && !isNaN(root._v.wind.direction.value)
-                                                        ? root._v.wind.direction.value : 0
-                                onWindDegChanged: requestPaint()
-                                onPaint: {
-                                    var c=getContext("2d"); c.clearRect(0,0,width,height)
-                                    c.strokeStyle=root.cGreyMid; c.lineWidth=1
-                                    c.beginPath(); c.arc(15,15,12,0,Math.PI*2); c.stroke()
-                                    // Arrow points to the wind's from-direction, matching QGC
-                                    c.save(); c.translate(15,15); c.rotate(windDeg*Math.PI/180)
-                                    c.strokeStyle=root.cNeon; c.lineWidth=2
-                                    c.beginPath(); c.moveTo(0,-11); c.lineTo(0,11); c.stroke()
-                                    c.fillStyle=root.cNeon
-                                    c.beginPath(); c.moveTo(-4,3); c.lineTo(0,-10); c.lineTo(4,3); c.closePath(); c.fill()
-                                    c.restore()
-                                }
-                            }
-                            // Wind speed (top) + direction degrees (bottom)
-                            Column {
-                                spacing: root._u * 0.3; anchors.verticalCenter:parent.verticalCenter
-                                Text {
-                                    text: root._ok ? root._v.wind.speed.valueString : ("– " + root._unitWndSpd)
-                                    font.pixelSize: root._u * 2.7; font.bold:true; color:root.cWhite; font.family:"monospace"
-                                }
-                                Text {
-                                    text: root._ok && root._v.wind.direction.value !== undefined ?
-                                          root._v.wind.direction.value.toFixed(0) + "°" : "–°"
-                                    font.pixelSize: root._u * 1.5; color:root.cGrey; font.family:"monospace"
-                                }
-                            }
-                        }
-                    }
-                    // ── Section 2: WAYPOINTS (current / total, filtered) ─────
+                    // ── Section 1: WIND (body-frame relative) ───────────────
+                    //     Arrow and angle are relative to the aircraft nose:
+                    //       0° = headwind, R = starboard, L = port, 180° = tailwind.
+                    //     H: headwind component (+ve=head, −ve=tail)
+                    //     X: crosswind component (+ve=right, −ve=left)
                     Item {
                         width: parent.width / 6; height: parent.height
                         Rectangle { anchors.right:parent.right; anchors.top:parent.top; anchors.bottom:parent.bottom; width: 1; color:root.cBorder }
                         // Section title
                         Text {
-                            text: qsTr("WAYPOINTS"); font.pixelSize: root._u * 1.725; font.bold: true; font.letterSpacing: root._u * 0.225; color:root.cWhite; font.family:"monospace"
+                            text: qsTr("WIND (REL)"); font.pixelSize: root._u * 1.725; font.bold: true; font.letterSpacing: root._u * 0.225; color:root.cWhite; font.family:"monospace"
                             anchors.top: parent.top; anchors.topMargin: root._u * 0.9
                             anchors.left: parent.left; anchors.leftMargin: root._u * 2.4
                         }
@@ -1034,8 +952,79 @@ Item {
                             anchors.verticalCenter: parent.verticalCenter
                             anchors.verticalCenterOffset: root._u * 1.35
                             anchors.left: parent.left; anchors.leftMargin: root._u * 2.4
+                            spacing: root._u * 1.5
+                            // Wind arrow — rotates by RELATIVE angle (body frame)
+                            //   Bound to _windRel which depends on BOTH wind direction
+                            //   AND heading, so the arrow updates when either changes
+                            //   (avoids the "frozen arrow" trap of binding to wind only).
+                            Canvas {
+                                id: windArrowCanvas
+                                width: root._u * 4.5; height: root._u * 4.5; anchors.verticalCenter:parent.verticalCenter
+                                // relAngle drives repaint: changes when wind OR heading moves
+                                property real relAngle: root._windRel
+                                onRelAngleChanged: requestPaint()
+                                onPaint: {
+                                    var c=getContext("2d"); c.clearRect(0,0,width,height)
+                                    var cx = width / 2, cy = height / 2, r = Math.min(cx, cy) - 3
+                                    // Outer reference circle
+                                    c.strokeStyle=root.cGreyMid; c.lineWidth=1
+                                    c.beginPath(); c.arc(cx, cy, r, 0, Math.PI*2); c.stroke()
+                                    // Nose marker (tiny tick at 12-o'clock on the circle)
+                                    c.strokeStyle=root.cWhite; c.lineWidth=1.5
+                                    c.beginPath(); c.moveTo(cx, cy - r); c.lineTo(cx, cy - r + 4); c.stroke()
+                                    // Arrow shows wind PUSH direction (downwind):
+                                    //   relAngle = where wind comes FROM relative to nose.
+                                    //   +180 flips it to show where the wind PUSHES the aircraft.
+                                    c.save(); c.translate(cx, cy); c.rotate((relAngle + 180) * Math.PI / 180)
+                                    c.strokeStyle=root.cNeon; c.lineWidth=2
+                                    c.beginPath(); c.moveTo(0, -r + 2); c.lineTo(0, r - 2); c.stroke()
+                                    c.fillStyle=root.cNeon
+                                    c.beginPath(); c.moveTo(-4, 3); c.lineTo(0, -r + 2); c.lineTo(4, 3); c.closePath(); c.fill()
+                                    c.restore()
+                                }
+                            }
+                            // Text column: speed, relative angle (R/L), headwind/crosswind
+                            Column {
+                                spacing: root._u * 0.3; anchors.verticalCenter:parent.verticalCenter
+                                // Wind speed (same as before — display units)
+                                Text {
+                                    text: root._ok ? root._v.wind.speed.valueString : ("– " + root._unitWndSpd)
+                                    font.pixelSize: root._u * 2.7; font.bold:true; color:root.cWhite; font.family:"monospace"
+                                }
+                                // Relative direction: R = starboard, L = port
+                                Text {
+                                    text: {
+                                        if (!root._ok || root._v.wind.direction.value === undefined) return "–°"
+                                        var r = root._windRel
+                                        if (Math.abs(r) < 0.5) return "0° HEAD"
+                                        if (Math.abs(Math.abs(r) - 180) < 0.5) return "180° TAIL"
+                                        var side = r > 0 ? "R" : "L"
+                                        return side + Math.abs(r).toFixed(0) + "°"
+                                    }
+                                    font.pixelSize: root._u * 1.5; color:root.cGrey; font.family:"monospace"
+                                }
+                                // Headwind / Crosswind components
+                                Text {
+                                    text: "H:" + root._headwind.toFixed(1) + " X:" + root._crosswind.toFixed(1)
+                                    font.pixelSize: root._u * 1.2; color: root.cGrey; font.family: "monospace"
+                                }
+                            }
+                        }
+                    }
+                    // ── Section 2: WAYPOINTS (current / total, filtered) ─────
+                    Item {
+                        width: parent.width / 6; height: parent.height
+                        Rectangle { anchors.right:parent.right; anchors.top:parent.top; anchors.bottom:parent.bottom; width: 1; color:root.cBorder }
+                        Text {
+                            text: qsTr("WAYPOINTS"); font.pixelSize: root._u * 1.725; font.bold: true; font.letterSpacing: root._u * 0.225; color:root.cWhite; font.family:"monospace"
+                            anchors.top: parent.top; anchors.topMargin: root._u * 0.9
+                            anchors.left: parent.left; anchors.leftMargin: root._u * 2.4
+                        }
+                        Row {
+                            anchors.verticalCenter: parent.verticalCenter
+                            anchors.verticalCenterOffset: root._u * 1.35
+                            anchors.left: parent.left; anchors.leftMargin: root._u * 2.4
                             spacing: root._u * 1.2
-                            // Waypoint icon
                             Canvas {
                                 width: root._u * 3; height: root._u * 3; anchors.verticalCenter:parent.verticalCenter
                                 onPaint: {
@@ -1046,7 +1035,6 @@ Item {
                                     c.beginPath(); c.arc(10,10,3,0,Math.PI*2); c.fill()
                                 }
                             }
-                            // "current / total" using the SAME filtered indices as the table
                             Column {
                                 spacing: root._u * 0.3; anchors.verticalCenter:parent.verticalCenter
                                 Text {
@@ -1066,31 +1054,23 @@ Item {
                             }
                         }
                     }
-                    // ── Section 3: DIST TO NEXT (distance only — ETA moved to Section 4) ──
+                    // ── Section 3: DIST TO NEXT ──
                     Item {
                         id: distToNextBox
                         width: parent.width / 6; height: parent.height
                         clip: true
                         Rectangle { anchors.right:parent.right; anchors.top:parent.top; anchors.bottom:parent.bottom; width: 1; color:root.cBorder }
-                        // Section title
                         Text {
                             text: qsTr("DIST TO NEXT"); font.pixelSize: root._u * 1.725; font.bold: true; font.letterSpacing: root._u * 0.225; color:root.cWhite; font.family:"monospace"
                             anchors.top: parent.top; anchors.topMargin: root._u * 0.9
                             anchors.left: parent.left; anchors.leftMargin: root._u * 2.4
                         }
-                        // Section content + all distance/ETA computation.
-                        // NOTE: this Column carries the id `distCalc` and exposes both
-                        // _distText and _etaText. The ETA value is now DISPLAYED in the
-                        // separate ETA section (was FLIGHT TIME), but it is still
-                        // COMPUTED here so both boxes read from one place.
                         Column {
                             id: distCalc
                             anchors.verticalCenter: parent.verticalCenter
                             anchors.verticalCenterOffset: root._u * 1.35
                             anchors.left: parent.left; anchors.leftMargin: root._u * 2.4
                             spacing: root._u * 0.45
-                            // Real distance from current vehicle position to the next
-                            // mission point (a true two-coordinate distance, not to Home)
                             readonly property var _nextItem: {
                                 if (!root._ok) return null
                                 var seq = root._v.missionItemIndex && root._v.missionItemIndex.value !== undefined ? root._v.missionItemIndex.value : -1
@@ -1109,8 +1089,6 @@ Item {
                                     var items = root._v.missionManager.missionItems
                                     if (seq < items.count) candidate = items.get(seq)
                                 }
-                                // Ignore fake (0,0 "Null Island") coordinates like RTL,
-                                // whose real position is computed at execution time
                                 if (candidate && candidate.coordinate !== undefined) {
                                     var lat = candidate.coordinate.latitude
                                     var lon = candidate.coordinate.longitude
@@ -1121,11 +1099,6 @@ Item {
                             readonly property bool _hasNextCoord: _nextItem !== null && _nextItem.coordinate !== undefined && root._ok && root._v.coordinate !== undefined
                             readonly property real _distValMeters: _hasNextCoord ? root._v.coordinate.distanceTo(_nextItem.coordinate) : -1
                             readonly property real _etaSec: (_distValMeters >= 0 && root._rawGndSpd > 0.3) ? (_distValMeters / root._rawGndSpd) : -1
-                            // Distance text uses QGC's official horizontal-distance
-                            // conversion + unit string (same helper QGC uses itself), so
-                            // it follows the user's Horizontal Distance setting exactly —
-                            // Nautical Miles, km, m or ft — with NO manual maths and fully
-                            // dynamic when the setting changes.
                             readonly property string _distText: {
                                 if (_distValMeters < 0)
                                     return "-- " + (root._uc ? root._uc.appSettingsHorizontalDistanceUnitsString : qsTr("m"))
@@ -1141,7 +1114,6 @@ Item {
                                 var ss = s % 60
                                 return String(h).padStart(2,"0") + ":" + String(m).padStart(2,"0") + ":" + String(ss).padStart(2,"0")
                             }
-                            // Distance only (ETA now shown in its own ETA box)
                             Column {
                                 spacing: root._u * 0.4
                                 Row {
@@ -1156,20 +1128,15 @@ Item {
                             }
                         }
                     }
-                    // ── Section 4: ETA (estimated time to next waypoint) ─────
-                    //     This box replaces the old FLIGHT TIME section. The ETA
-                    //     value is computed in the DIST TO NEXT section (id: distCalc)
-                    //     and simply displayed here in its own separate box.
+                    // ── Section 4: ETA ─────
                     Item {
                         width: parent.width / 6; height: parent.height
                         Rectangle { anchors.right:parent.right; anchors.top:parent.top; anchors.bottom:parent.bottom; width: 1; color:root.cBorder }
-                        // Section title
                         Text {
                             text: qsTr("ETA"); font.pixelSize: root._u * 1.725; font.bold: true; font.letterSpacing: root._u * 0.225; color:root.cWhite; font.family:"monospace"
                             anchors.top: parent.top; anchors.topMargin: root._u * 0.9
                             anchors.left: parent.left; anchors.leftMargin: root._u * 2.4
                         }
-                        // Section content — ETA pulled from distCalc._etaText
                         Row {
                             anchors.verticalCenter: parent.verticalCenter
                             anchors.verticalCenterOffset: root._u * 1.35
@@ -1183,17 +1150,15 @@ Item {
                             }
                         }
                     }
-                    // ── Section 5: MESSAGES (new message count) ──────────────
+                    // ── Section 5: MESSAGES ──────────────
                     Item {
                         width: parent.width / 6; height: parent.height
                         Rectangle { anchors.right:parent.right; anchors.top:parent.top; anchors.bottom:parent.bottom; width: 1; color:root.cBorder }
-                        // Section title
                         Text {
                             text: qsTr("MESSAGES"); font.pixelSize: root._u * 1.725; font.bold: true; font.letterSpacing: root._u * 0.225; color:root.cWhite; font.family:"monospace"
                             anchors.top: parent.top; anchors.topMargin: root._u * 0.9
                             anchors.left: parent.left; anchors.leftMargin: root._u * 2.4
                         }
-                        // Section content
                         Row {
                             anchors.verticalCenter: parent.verticalCenter
                             anchors.verticalCenterOffset: root._u * 1.35
@@ -1207,22 +1172,19 @@ Item {
                             }
                         }
                     }
-                    // ── Section 6: ALERTS (blinking warning/error indicator) ─
+                    // ── Section 6: ALERTS ─
                     Item {
                         width: parent.width / 6; height: parent.height
-                        // Section title
                         Text {
                             text: qsTr("ALERTS"); font.pixelSize: root._u * 1.725; font.bold: true; font.letterSpacing: root._u * 0.225; color:root.cWhite; font.family:"monospace"
                             anchors.top: parent.top; anchors.topMargin: root._u * 0.9
                             anchors.left: parent.left; anchors.leftMargin: root._u * 2.4
                         }
-                        // Section content
                         Row {
                             anchors.verticalCenter: parent.verticalCenter
                             anchors.verticalCenterOffset: root._u * 1.35
                             anchors.left: parent.left; anchors.leftMargin: root._u * 2.4
                             spacing: root._u * 1.5
-                            // Warning glyph — blinks only when there is a warn/error
                             Text {
                                 text: "⚠"
                                 font.pixelSize: root._u * 3.6; color:root.cOrange
@@ -1233,7 +1195,6 @@ Item {
                                     NumberAnimation { from:0.3; to:1.0; duration:700 }
                                 }
                             }
-                            // "!" when warn/error, otherwise "0"
                             Text {
                                 text: root._msgErr || root._msgWarn ? "!" : "0"
                                 font.pixelSize: root._u * 3.6; font.bold:true; font.family:"monospace"

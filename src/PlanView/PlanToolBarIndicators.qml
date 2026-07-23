@@ -152,6 +152,28 @@ RowLayout {
     }
 
     QGCButton {
+        objectName: "planToolbar_elevationGraphButton"
+        text: qsTr("Elevation Graph")
+        iconSource: "/qmlimages/Plan.svg"
+        onClicked: {
+            toolbarButtonClicked()
+            elevationGraphLoader.active = true
+        }
+    }
+
+    Loader {
+        id:     elevationGraphLoader
+        active: false
+        sourceComponent: Component {
+            ElevationGraphWindow {
+                missionController: root._missionController
+                visible:           true
+                onClosing:         elevationGraphLoader.active = false
+            }
+        }
+    }
+
+    QGCButton {
         iconSource: "qrc:/qmlimages/Hamburger.svg"
 
         onClicked: {

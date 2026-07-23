@@ -78,7 +78,7 @@
 #include "GimbalController.h"
 #include "MavlinkSettings.h"
 #include "APM.h"
-
+#include <QFileInfo>
 #ifdef QT_DEBUG
 #include "MockLink.h"
 #endif
@@ -3121,8 +3121,58 @@ void Vehicle::sendJoystickAuxRcOverrideThreadSafe(const std::array<uint16_t, kAu
     sendMessageOnLinkThreadSafe(sharedLink.get(), message);
     _joystickAuxRcOverrideActive = true;
 }
+void Vehicle::sendRcOverride(quint16 ch1Roll, quint16 ch2Pitch)
+{
+    SharedLinkInterfacePtr sharedLink = vehicleLinkManager()->primaryLink().lock();
+    if (!sharedLink) {
+        return;
+    }
+    if (sharedLink->linkConfiguration()->isHighLatency()) {
+        return;
+    }
+
+    mavlink_message_t message;
+    mavlink_msg_rc_channels_override_pack_chan(
+        static_cast<uint8_t>(MAVLinkProtocol::instance()->getSystemId()),
+        static_cast<uint8_t>(MAVLinkProtocol::getComponentId()),
+        sharedLink->mavlinkChannel(),
+        &message,
+        static_cast<uint8_t>(_systemID),
+        static_cast<uint8_t>(_defaultComponentId),
+        ch1Roll,                            // chan1: roll
+        ch2Pitch,                           // chan2: pitch
+        UINT16_MAX,                         // chan3: NEVER touch throttle
+        UINT16_MAX,                         // chan4: ignore yaw
+        UINT16_MAX,                         // chan5: ignore
+        UINT16_MAX,                         // chan6: ignore
+        UINT16_MAX,                         // chan7: ignore
+        UINT16_MAX,                         // chan8: ignore
+        UINT16_MAX,                         // chan9: ignore
+        UINT16_MAX,                         // chan10: ignore
+        0, 0, 0, 0, 0, 0, 0, 0);           // chan11-18: not used
+    sendMessageOnLinkThreadSafe(sharedLink.get(), message);
+}
+
+void Vehicle::releaseRcOverride()
+{
+    sendRcOverride(0, 0);
+}
+bool Vehicle::saveTextToFile(const QString &filePath, const QString &content)
+{
+    QFileInfo fi(filePath);
+    QDir().mkpath(fi.absolutePath());
+    QFile file(filePath);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        return false;
+    }
+    file.write(content.toUtf8());
+    file.close();
+    return true;
+}
+
 
 void Vehicle::triggerSimpleCamera()
+
 {
     sendMavCommand(_defaultComponentId,
                    MAV_CMD_DO_DIGICAM_CONTROL,

@@ -211,6 +211,9 @@ public:
     Q_PROPERTY(bool                 requiresGpsFix              READ requiresGpsFix                                                 NOTIFY requiresGpsFixChanged)
     Q_PROPERTY(double               loadProgress                READ loadProgress                                                   NOTIFY loadProgressChanged)
     Q_PROPERTY(bool                 initialConnectComplete      READ isInitialConnectComplete                                       NOTIFY initialConnectComplete)
+    //testservo
+    Q_PROPERTY(QVector<int> servoOutputs READ servoOutputs NOTIFY servoOutputsChanged)
+    QVector<int> servoOutputs() const { return _servoOutputRawValues; }
 
     // The following properties relate to Orbit status
     Q_PROPERTY(bool             orbitActive     READ orbitActive        NOTIFY orbitActiveChanged)
@@ -420,7 +423,12 @@ public:
     /// Sends RC_CHANNELS_OVERRIDE for joystick aux axes mapped to RC channels 5–10 only.
     static constexpr int kAuxRcOverrideChannelCount = 6; ///< Number of RC channels overridden (channels 5–10)
     void sendJoystickAuxRcOverrideThreadSafe(const std::array<uint16_t, kAuxRcOverrideChannelCount> &channelValues, const std::array<bool, kAuxRcOverrideChannelCount> &channelEnabled, bool useRcOverride);
-
+    /// Pre-flight control surface test: override roll/pitch only.
+    /// Throttle (ch3) is NEVER touched. Pass 0 to release.
+    Q_INVOKABLE void sendRcOverride(quint16 ch1Roll, quint16 ch2Pitch);
+    Q_INVOKABLE void releaseRcOverride();
+    /// Saves a text string to a local file. Used by the PFI report.
+    Q_INVOKABLE bool saveTextToFile(const QString &filePath, const QString &content);
     // Property accesors
     int id() const{ return _systemID; }
     int compId() const{ return _compID; }

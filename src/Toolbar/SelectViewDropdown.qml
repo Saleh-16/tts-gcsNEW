@@ -129,7 +129,7 @@ ToolIndicatorPage {
                 QGCLabel {
                     Layout.fillWidth: true
                     horizontalAlignment: Text.AlignHCenter
-                    text: " Ahmed Alanazi  |  Riyadh Alrashidi |  Saleh Alanazi"
+                    text: " Saleh Alanazi  |  Riyadh Alrashidi |  Ahmed Alanazi"
                     font.pointSize: ScreenTools.smallFontPointSize
                 }
             }

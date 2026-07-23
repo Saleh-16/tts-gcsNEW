@@ -57,6 +57,27 @@ TreeView {
 
     property int _lastMissionItemCount: 0
 
+    // ── Section ordering — single source of truth for numbering ──────────
+    // To reorder or add a section: edit this list only.
+    // paramSection and missionReviewSection numbers are derived externally
+    // via root.sectionCount so they always follow on automatically.
+    readonly property var _groupOrder: [
+        "planFileGroup",
+        "defaultsGroup",
+        "missionGroup",
+        "fenceGroup",
+        "rallyGroup",
+        "transformGroup"
+    ]
+
+    // Number of tree sections (used by PlanViewRightPanel to offset its own sections)
+    readonly property int sectionCount: _groupOrder.length
+
+    function _groupNumber(nodeType) {
+        var idx = _groupOrder.indexOf(nodeType)
+        return idx >= 0 ? (idx + 1).toString() : ""
+    }
+
     Connections {
         target: root._missionController.visualItems
 
@@ -153,19 +174,6 @@ TreeView {
             root.expand(row)
         }
         root.forceLayout()
-    }
-
-    // Section number for group headers
-    function _groupNumber(nodeType) {
-        switch (nodeType) {
-        case "planFileGroup":   return "1"
-        case "defaultsGroup":  return "2"
-        case "missionGroup":   return "3"
-        case "fenceGroup":     return "4"
-        case "rallyGroup":     return "5"
-        case "transformGroup": return "6"
-        default:               return ""
-        }
     }
 
     // Subtitle text shown on group headers, varies by node type
@@ -362,7 +370,7 @@ TreeView {
                     anchors.right: parent.right
                     anchors.margins: ScreenTools.defaultFontPixelWidth * 0.5
 
-                    // ── Numbered circle ──
+                    // ── Numbered circle (auto from _groupOrder) ──
                     Rectangle {
                         Layout.alignment: Qt.AlignVCenter
                         Layout.preferredWidth: ScreenTools.defaultFontPixelHeight * 1.0

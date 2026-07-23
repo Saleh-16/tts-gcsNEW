@@ -84,7 +84,7 @@ public:
     bool                specifiesAltitudeOnly       (void) const final { return false; }
     QString             commandDescription          (void) const final { return "Landing Pattern"; }
     QString             commandName                 (void) const final { return "Landing Pattern"; }
-    QString             abbreviation                (void) const final { return "L"; }
+    QString             abbreviation                (void) const final { return "T"; }
     QGeoCoordinate      coordinate                  (void) const final { return exitCoordinate(); }
     QGeoCoordinate      entryCoordinate             (void) const final { return _finalApproachCoordinate; }
     QGeoCoordinate      exitCoordinate              (void) const final { return _landingCoordinate; }

@@ -39,6 +39,7 @@
 #include <QtCore/QApplicationStatic>
 #include <QtCore/QFile>
 #include <QtQml/QQmlApplicationEngine>
+#include "../PlanView/FileWriter.h"
 #include <QtQml/QQmlContext>
 #include <QtQuick/QQuickItem>
 
@@ -288,6 +289,7 @@ QQmlApplicationEngine *QGCCorePlugin::createQmlApplicationEngine(QObject *parent
     QQmlApplicationEngine *const qmlEngine = new QQmlApplicationEngine(parent);
     qmlEngine->addImportPath(QStringLiteral("qrc:/qml"));
     qmlEngine->rootContext()->setContextProperty(QStringLiteral("joystickManager"), JoystickManager::instance());
+    qmlEngine->rootContext()->setContextProperty(QStringLiteral("fileWriter"), new FileWriter(qmlEngine));
     return qmlEngine;
 }
 

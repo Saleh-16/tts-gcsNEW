@@ -20,7 +20,7 @@ Rectangle {
     property var _masterController: missionItem.masterController
     property var _controllerVehicle: _masterController.controllerVehicle
     property bool _waypointsOnlyMode: QGroundControl.corePlugin.options.missionWaypointsOnly
-    property bool _showCameraSection: _waypointsOnlyMode || QGroundControl.corePlugin.showAdvancedUI
+    property bool _showCameraSection: false
     property bool _simpleMissionStart: QGroundControl.corePlugin.options.showSimpleMissionStart
 
     readonly property real _margin: ScreenTools.defaultFontPixelWidth / 2

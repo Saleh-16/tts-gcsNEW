@@ -1,20 +1,37 @@
 import QtQuick
 import QtGraphs
-
 import QGroundControl
 import QGroundControl.Controls
-
 Rectangle {
     id:         root
     radius:     ScreenTools.defaultFontPixelWidth * 0.5
     color:      qgcPal.window
     opacity:    0.80
     clip:       true
-
     property var missionController
-
     signal setCurrentSeqNum(int seqNum)
-
+    /// Exposes the internal chart so external tools (like ElevationGraphWindow)
+    /// can read/drive its axes for features like zoom, without duplicating
+    /// the chart itself. Also lets them read the computed full-range
+    /// axisX.max, needed to know the "reset zoom" bounds.
+    property alias chart: chart
+    /// Exposes the internal TerrainProfile so external tools can query
+    /// altitude data (e.g. for computing a vertical auto-fit range when
+    /// zooming into a horizontal distance span).
+    property alias terrainProfile: terrainProfile
+    /// Optional external override for the X axis visible range, used by
+    /// standalone viewers (like ElevationGraphWindow) to implement zoom
+    /// without duplicating this chart. When either is NaN (the default),
+    /// the axis falls back to its normal full-mission-distance behavior.
+    property real externalMinX: NaN
+    property real externalMaxX: NaN
+    /// Optional external override for the Y axis (altitude) visible range.
+    /// Used together with externalMinX/externalMaxX to implement
+    /// Mission-Planner-style drag-to-zoom, where the vertical scale
+    /// auto-fits to whatever altitude range falls within the selected
+    /// horizontal span. NaN falls back to the normal full-range behavior.
+    property real externalMinY: NaN
+    property real externalMaxY: NaN
     property real _margins:                 ScreenTools.defaultFontPixelWidth / 2
     property var  _visualItems:             missionController.visualItems
     property real _altRange:                _maxAMSLAltitude - _minAMSLAltitude
@@ -23,9 +40,7 @@ Rectangle {
     property real _maxAMSLAltitude:         isNaN(terrainProfile.maxAMSLAlt) ? 100 : terrainProfile.maxAMSLAlt
     property real _missionTotalDistance:    isNaN(missionController.missionTotalDistance) ? 100 : missionController.missionTotalDistance
     property var  _unitsConversion:         QGroundControl.unitsConversion
-
     QGCPalette { id: qgcPal }
-
     QGCLabel {
         id:                     titleLabel
         anchors.top:            parent.bottom
@@ -36,7 +51,6 @@ Rectangle {
         rotation:               -90
         transformOrigin:        Item.TopLeft
     }
-
     QGCFlickable {
         id:                 terrainProfileFlickable
         anchors.top:        parent.top
@@ -45,11 +59,9 @@ Rectangle {
         anchors.left:       parent.left
         anchors.right:      parent.right
         clip:               true
-
         Item {
             height: terrainProfileFlickable.height
             width:  terrainProfileFlickable.width
-
             GraphsView {
                 id:                 chart
                 anchors.fill:       parent
@@ -57,7 +69,6 @@ Rectangle {
                 marginRight:        ScreenTools.defaultFontPixelWidth * 2   // Prevents clipping last tick mark
                 marginBottom:       -ScreenTools.defaultFontPixelHeight / 2 // For some reason you can't get rid of bottom margin by setting to 0
                 marginLeft:         0
-
                 theme: GraphsTheme {
                     colorScheme:                qgcPal.globalTheme === QGCPalette.Light ? GraphsTheme.ColorScheme.Light : GraphsTheme.ColorScheme.Dark
                     backgroundColor:            "transparent"
@@ -73,54 +84,52 @@ Rectangle {
                     axisYLabelFont.family:      ScreenTools.fixedFontFamily
                     axisYLabelFont.pointSize:   ScreenTools.smallFontPointSize
                 }
-
                 axisX: ValueAxis {
                     id:                         axisX
-                    min:                        0
-                    max:                        _unitsConversion.metersToAppSettingsHorizontalDistanceUnits(_missionTotalDistance)
+                    min:                        isNaN(root.externalMinX) ? 0 : root.externalMinX
+                    max:                        isNaN(root.externalMaxX)
+                                                    ? _unitsConversion.metersToAppSettingsHorizontalDistanceUnits(_missionTotalDistance)
+                                                    : root.externalMaxX
                     lineVisible:                true
-                    tickInterval:               max > 0 ? max / 4 : 1
+                    tickInterval:               (max - min) > 0 ? (max - min) / 4 : 1
                     labelDecimals:              1
                 }
-
                 axisY: ValueAxis {
                     id:                         axisY
-                    min:                        _unitsConversion.metersToAppSettingsVerticalDistanceUnits(_minAMSLAltitude)
-                    max:                        _unitsConversion.metersToAppSettingsVerticalDistanceUnits(_maxAMSLAltitude)
+                    min:                        isNaN(root.externalMinY)
+                                                    ? _unitsConversion.metersToAppSettingsVerticalDistanceUnits(_minAMSLAltitude)
+                                                    : root.externalMinY
+                    max:                        isNaN(root.externalMaxY)
+                                                    ? _unitsConversion.metersToAppSettingsVerticalDistanceUnits(_maxAMSLAltitude)
+                                                    : root.externalMaxY
                     lineVisible:                true
                     tickInterval:               (max - min) > 0 ? (max - min) / 3 : 1
                     labelDecimals:              1
                 }
-
                 // The order of the LineSeries is important to work around nasty bugs in QtGraphs where series just don't display. If you put
                 // terrain and flight first you end up with cases where flight doesn't display no matter what other sorts of workarounds you try.
                 // Putting missing and collision first seems to prevent the problem.
-
                 LineSeries {
                     id:         missingSeries
                     color:      "yellow"
                     width:      2
                 }
-
                 LineSeries {
                     id:         collisionSeries
                     color:      "red"
                     width:      flightSeries.width * 3
                 }
-
                 LineSeries {
                     id:         terrainSeries
                     color:      "green"
                     width:      2
                 }
-
                 LineSeries {
                     id:         flightSeries
                     color:      "orange"
                     width:      2
                 }
             }
-
             TerrainProfile {
                 id:                 terrainProfile
                 x:                  chart.plotArea.x
@@ -130,17 +139,13 @@ Rectangle {
                 missionController:  root.missionController
                 horizontalScale:    _unitsConversion.metersToAppSettingsHorizontalDistanceUnits(1)
                 verticalScale:      _unitsConversion.metersToAppSettingsVerticalDistanceUnits(1)
-
                 onProfileChanged:   terrainProfile.updateSeries(terrainSeries, flightSeries, missingSeries, collisionSeries)
-
                 Repeater {
                     model: missionController.visualItems
-
                     Item {
                         id:             topLevelItem
                         anchors.fill:   parent
                         visible:        object.specifiesCoordinate && !object.standaloneCoordinate
-
                         Rectangle {
                             id:         simpleItem
                             height:     terrainProfile.height
@@ -148,7 +153,6 @@ Rectangle {
                             color:      qgcPal.text
                             x:          (object.distanceFromStart * terrainProfile.pixelsPerMeter)
                             visible:    object.isSimpleItem || object.isSingleItem
-
                             MissionItemIndexLabel {
                                 anchors.horizontalCenter:   parent.horizontalCenter
                                 anchors.bottom:             parent.bottom
@@ -159,7 +163,6 @@ Rectangle {
                                 onClicked:                  root.setCurrentSeqNum(object.sequenceNumber)
                             }
                         }
-
                         Rectangle {
                             id:         complexItemEntry
                             height:     terrainProfile.height
@@ -167,7 +170,6 @@ Rectangle {
                             color:      qgcPal.text
                             x:          (object.distanceFromStart * terrainProfile.pixelsPerMeter)
                             visible:    complexItem.visible
-
                             MissionItemIndexLabel {
                                 anchors.horizontalCenter:   parent.horizontalCenter
                                 anchors.bottom:             parent.bottom
@@ -177,7 +179,6 @@ Rectangle {
                                 onClicked:                  root.setCurrentSeqNum(object.sequenceNumber)
                             }
                         }
-
                         Rectangle {
                             id:         complexItemExit
                             height:     terrainProfile.height
@@ -185,7 +186,6 @@ Rectangle {
                             color:      qgcPal.text
                             x:          ((object.distanceFromStart + object.complexDistance) * terrainProfile.pixelsPerMeter)
                             visible:    complexItem.visible
-
                             MissionItemIndexLabel {
                                 anchors.horizontalCenter:   parent.horizontalCenter
                                 anchors.bottom:             parent.bottom
@@ -195,7 +195,6 @@ Rectangle {
                                 onClicked:                  root.setCurrentSeqNum(object.sequenceNumber)
                             }
                         }
-
                         Rectangle {
                             id:             complexItem
                             anchors.bottom: parent.bottom
@@ -205,12 +204,10 @@ Rectangle {
                             color:          "green"
                             opacity:        0.5
                             visible:        !object.isSimpleItem && !object.isSingleItem
-
                             QGCMouseArea {
                                 anchors.fill:   parent
                                 onClicked:      root.setCurrentSeqNum(object.sequenceNumber)
                             }
-
                             QGCLabel {
                                 id:                         patternNameLabel
                                 anchors.horizontalCenter:   parent.horizontalCenter
@@ -222,7 +219,6 @@ Rectangle {
             }
         }
     }
-
     function applyOpacity(colorIn, opacity){
         return Qt.rgba(colorIn.r, colorIn.g, colorIn.b, opacity)
     }

@@ -537,7 +537,8 @@ void PlanManager::_handleMissionRequest(const mavlink_message_t& message)
                                                MAV_COMP_ID_AUTOPILOT1,
                                                missionRequestSeq,
                                                item->frame(),
-                                               item->command(),
+                                               (item->command() == MAV_CMD_NAV_SPLINE_WAYPOINT)
+                                                   ? MAV_CMD_NAV_WAYPOINT : item->command(),   // TTS: Target -> Waypoint
                                                missionRequestSeq == 0,
                                                item->autoContinue(),
                                                item->param1(),

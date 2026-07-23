@@ -48,6 +48,7 @@ qt_add_qml_module(PlanViewModule
         SurveyMapVisual.qml
         TakeoffItemMapVisual.qml
         TerrainStatus.qml
+        ElevationGraphWindow.qml
         TransectStyleComplexItemEditor.qml
         TransectStyleComplexItemStats.qml
         TransectStyleComplexItemTabBar.qml
@@ -56,8 +57,12 @@ qt_add_qml_module(PlanViewModule
         TransformEditor.qml
         VTOLLandingPatternEditor.qml
         VTOLLandingPatternMapVisual.qml
+    SOURCES
+        FileWriter.h
+        FileWriter.cc
     NO_PLUGIN
 )
+
 
 # Files whose runtime alias differs from their on-disk filename.
 set_source_files_properties("${CMAKE_SOURCE_DIR}/resources/AdvancedSliders.svg"
