@@ -33,10 +33,8 @@ Item {
     readonly property int _layerMission: 1
     readonly property int _layerFence: 2
     readonly property int _layerRally: 3
-
     // ── Mission Review upload/save control ──
     property bool _reviewUploadAllowed: rightPanel.uploadAllowed !== undefined ? rightPanel.uploadAllowed : true
-
     onVisibleChanged: {
         if(visible) {
             editorMap.zoomLevel = QGroundControl.flightMapZoom
@@ -102,7 +100,6 @@ Item {
                     qsTr("Mission review has unresolved critical findings. Accept responsibility in the Mission Review panel before uploading."))
                 return
             }
-
             if (!checkReadyForSaveUpload(false /* save */)) {
                 return
             }
@@ -135,7 +132,6 @@ Item {
                     qsTr("Mission review has unresolved critical findings. Accept responsibility in the Mission Review panel before saving."))
                 return
             }
-
             if (!checkReadyForSaveUpload(true /* save */)) {
                 return
             }
@@ -376,7 +372,7 @@ Item {
             anchors.right:        editorMap.right
             anchors.bottom:       editorMap.bottom
             anchors.rightMargin:  editorMap._rightToolWidth + _toolsMargin
-            anchors.bottomMargin: (missionStatus.visible ? missionStatus.height + _toolsMargin : _toolsMargin)
+            anchors.bottomMargin: (wpTable.visible ? wpTable.height + _toolsMargin : _toolsMargin)
             width:  ScreenTools.defaultFontPixelWidth * 4
             height: ScreenTools.defaultFontPixelWidth * 8
             radius: ScreenTools.defaultFontPixelWidth * 0.4
@@ -633,7 +629,10 @@ Item {
             anchors.right: rightPanel.left
             anchors.bottom: parent.bottom
             spacing: 0
-            visible: !hidden && _editingLayer == _layerMission && QGroundControl.corePlugin.options.showMissionStatus
+            // TTS: الشريط الأصلي (Terrain/Mission Stats) مخفي دائماً بطلب صريح —
+            // الكود القديم معلّق أدناه بدل حذفه (قاعدة رقم 8 بمشروع TTS)
+            // visible: !hidden && _editingLayer == _layerMission && QGroundControl.corePlugin.options.showMissionStatus
+            visible: false
             readonly property bool hidden: _planViewSettings.showMissionItemStatus.rawValue ? false : true
             function showMissionStatus() {
                 _planViewSettings.showMissionItemStatus.rawValue = true
@@ -729,6 +728,22 @@ Item {
                 planMasterController: _root._planMasterController
             }
         }
+
+        // ══ TTS WAYPOINT TABLE — جدول تعديل نقاط المهمة (إضافة، لا يحذف اللوحة اليمنى) ══
+        // ثابت دائماً (لا طي/فتح)، ملتصق مباشرة بشريط الأدوات يسار واللوحة اليمنى (بدون مسافة)
+        WaypointTable {
+            id:                   wpTable
+            z:                    QGroundControl.zOrderWidgets + 1
+            anchors.left:         parent.left
+            anchors.right:        rightPanel.left
+            anchors.bottom:       parent.bottom
+            height:               parent.height * 0.32
+            visible:              _editingLayer == _layerMission
+            missionController:    _missionController
+            planMasterController: _planMasterController
+            map:                  editorMap
+        }
+        // ══ END TTS WAYPOINT TABLE ═══════════════════════════════════════
     }
         //- ToolStrip ToolStripDropPanel Components
     Component {

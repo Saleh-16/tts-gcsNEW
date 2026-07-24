@@ -28,6 +28,7 @@ qt_add_qml_module(PlanViewModule
         MissionItemStatus.qml
         MissionSettingsEditor.qml
         MissionStats.qml
+        WaypointTable.qml
         PlanEditToolbar.qml
         PlanInfoEditor.qml
         PlanToolBarIndicators.qml

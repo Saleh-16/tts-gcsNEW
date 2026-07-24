@@ -24,7 +24,7 @@ import QtCore
 ///                                EKF, Vibration, Telemetry, Mission)
 ///   2. Control Surface Test   — RC_CHANNELS_OVERRIDE driven. Operator picks
 ///                                Automatic (runs all 4 steps unattended,
-///                                waiting 5s between each) or Manual (Run /
+///                                waiting between each) or Manual (Run /
 ///                                Retry / Back / Next per step). Reads elevon
 ///                                servo assignment, RC channel mapping and
 ///                                stick calibration from the vehicle itself;
@@ -38,9 +38,10 @@ import QtCore
 /// file exists purely for auditing and compliance.
 ///
 /// Portability: the save path is resolved at runtime from
-/// StandardPaths.HomeLocation, so it lands in the current user's home
-/// directory (~/Documents/PFI/) on any machine and any username — nothing
-/// is hardcoded to a specific person's account.
+/// StandardPaths.HomeLocation via toLocalFile() (not a manual "file://"
+/// string strip), so it lands correctly in the current user's home
+/// directory on Linux, Windows, and macOS alike — nothing is hardcoded
+/// to a specific person's account or platform-specific path format.
 Column {
     id: control
     property int  sectionIndex: 9
@@ -97,12 +98,12 @@ Column {
             ListElement { name: qsTr("Mission");   iconSource: "/qmlimages/Plan.svg";       status: 0; detail: "" }
         }
         readonly property ListModel manualChecklist: ListModel {
-            ListElement { label: qsTr("Propeller Installed"); checked: false; mandatory: true }
+            ListElement { label: qsTr("Pushrod connected"); checked: false; mandatory: true }
             ListElement { label: qsTr("Wings Locked");        checked: false; mandatory: true }
             ListElement { label: qsTr("Payload Secured");     checked: false; mandatory: true }
             ListElement { label: qsTr("Battery Secured");     checked: false; mandatory: true }
             ListElement { label: qsTr("ESAD Connected");      checked: false; mandatory: true }
-            ListElement { label: qsTr("RC Connected");       checked: false; mandatory: true }
+            ListElement { label: qsTr("RC Link Established");       checked: false; mandatory: true }
         }
         // Elevon test steps. ch1/ch2 start at 0 and are populated at runtime
         // by populateStepValues() from the vehicle's own RC calibration and
@@ -616,10 +617,15 @@ Column {
             var serial   = vehicleSerial.trim().replace(/[^a-zA-Z0-9_-]/g, "")
             var operator = operatorName.trim().replace(/[^a-zA-Z0-9_-]/g, "")
             var namePart = serial + "_" + operator + "_"
-            // Portable path: resolves to the current user's home directory on
-            // any machine (Linux/Windows/macOS), instead of a hardcoded user.
+            // Portable path: toLocalFile() resolves the file:// URL to a
+            // correctly-formatted local path on every platform. A manual
+            // .toString().replace("file://","") leaves a leading slash
+            // before drive letters on Windows (e.g. "/C:/Users/...")
+            // which is not a valid path there — this was the exact reason
+            // the report saved fine on Linux but silently failed to save
+            // on Windows.
             var homeUrl  = _try(function() { return StandardPaths.writableLocation(StandardPaths.HomeLocation) })
-            var homePath = homeUrl ? homeUrl.toString().replace("file://", "") : ""
+            var homePath = homeUrl ? homeUrl.toLocalFile() : ""
             var path     = homePath + "/Documents/PFI/PFI_" + namePart + timestamp + ".txt"
             // Silent save via C++ Vehicle::saveTextToFile() — creates the
             // directory if needed. XMLHttpRequest PUT does not write local
@@ -899,14 +905,14 @@ Column {
                         QGCLabel {
                             Layout.fillWidth: true
                             visible: !inspectionController.controlSurfaceTestStarted
-                            text: qsTr("Remove the propeller and restrain the airframe. Do not move the RC sticks during the test.")
+                            text: qsTr("Ensure the pushrod is properly connected to the servo before starting the test. Do not move the RC sticks during the test.")
                             wrapMode: Text.WordWrap; opacity: 0.8
                         }
                         // ── Hazard acknowledgment ──
                         QGCCheckBox {
                             Layout.fillWidth: true
                             visible: !inspectionController.controlSurfaceTestStarted
-                            text: qsTr("Propeller removed, airframe restrained, area clear")
+                            text: qsTr("Pushrod connected, test area clear")
                             checked: inspectionController.hazardAcknowledged
                             onClicked: inspectionController.hazardAcknowledged = checked
                         }
@@ -922,7 +928,6 @@ Column {
                                       : inspectionController.canRunElevonTest() ? qsTr("Run Elevon Test") : qsTr("Disarm to run test")
                             onClicked: inspectionController.runElevonTest()
                         }
-
                         // ── Mode selection: shown after Run Elevon Test succeeds,
                         //    before the wizard itself starts ──
                         ColumnLayout {
@@ -930,17 +935,14 @@ Column {
                             Layout.fillWidth: true
                             visible: inspectionController.controlSurfaceTestStarted && wizard.mode === ""
                             spacing: ScreenTools.defaultFontPixelHeight * 0.4
-
                             QGCLabel {
                                 Layout.fillWidth: true
                                 text: qsTr("How would you like to run the test?")
                                 font.bold: true
                             }
-
                             RowLayout {
                                 Layout.fillWidth: true
                                 spacing: ScreenTools.defaultFontPixelWidth * 0.5
-
                                 QGCButton {
                                     Layout.fillWidth: true
                                     primary: true
@@ -954,14 +956,12 @@ Column {
                                 }
                             }
                         }
-
                         // ── Wizard (visible after a mode is chosen) ──
                         ColumnLayout {
                             id: wizard
                             Layout.fillWidth: true
                             visible: inspectionController.controlSurfaceTestStarted && mode !== ""
                             spacing: ScreenTools.defaultFontPixelHeight * 0.5
-
                             /// "" = no mode chosen yet | "manual" | "automatic"
                             property string mode:        ""
                             property int    stepIndex:   0
@@ -971,18 +971,14 @@ Column {
                             property int    beforeRight: -1
                             property int    afterLeft:   -1
                             property int    afterRight:  -1
-
                             readonly property var  steps:      inspectionController.elevonSteps
                             readonly property var  step:       steps.get(stepIndex)
                             readonly property bool isLastStep: stepIndex === steps.count - 1
-
                             onStepIndexChanged: state = "idle"
-
                             function goToStep(index) {
                                 state = "idle"
                                 stepIndex = Math.max(0, Math.min(steps.count - 1, index))
                             }
-
                             /// Entry point for the Automatic mode: sets the
                             /// mode flag and kicks off the first step. From
                             /// here on, checkReadback()'s own auto-advance
@@ -993,7 +989,6 @@ Column {
                                 goToStep(0)
                                 startStep()
                             }
-
                             /// Reads servos, sends override, starts readback timer.
                             function startStep() {
                                 var s = inspectionController.readServos()
@@ -1002,7 +997,6 @@ Column {
                                 inspectionController.driveStep(stepIndex)
                                 readbackTimer.restart()
                             }
-
                             /// Compares servo PWM before and after. A change
                             /// greater than 30µs counts as movement, filtering
                             /// noise without missing real deflection. Releases
@@ -1030,7 +1024,6 @@ Column {
                                     // operator must intervene (Retry/Manual).
                                 }
                             }
-
                             // Wait for the autopilot to process the override
                             // and echo at least one SERVO_OUTPUT_RAW before
                             // reading it back.
@@ -1040,7 +1033,6 @@ Column {
                                 repeat:      false
                                 onTriggered: wizard.checkReadback()
                             }
-
                             // Automatic mode only: after a passing step,
                             // waits before moving to (and starting) the next
                             // step with zero operator input. In Manual mode
@@ -1058,7 +1050,6 @@ Column {
                                     }
                                 }
                             }
-
                             // ── Progress dots ──
                             RowLayout {
                                 Layout.fillWidth: true; spacing: ScreenTools.defaultFontPixelWidth * 0.4
@@ -1087,9 +1078,7 @@ Column {
                                 }
                                 Item { Layout.fillWidth: true }
                             }
-
                             Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: qgcPal.windowShadeDark }
-
                             // ── Step title + status ──
                             RowLayout {
                                 Layout.fillWidth: true; spacing: ScreenTools.defaultFontPixelWidth * 0.5
@@ -1104,10 +1093,8 @@ Column {
                                     color: PreFlightStatus.color(wizard.step ? wizard.step.status : PreFlightStatus.Pending)
                                 }
                             }
-
                             // ── Instruction ──
                             QGCLabel { Layout.fillWidth: true; text: wizard.step ? wizard.step.instruction : ""; wrapMode: Text.WordWrap; opacity: 0.8 }
-
                             // ── Run button — MANUAL MODE ONLY ──
                             QGCButton {
                                 Layout.fillWidth: true; primary: true
@@ -1116,7 +1103,6 @@ Column {
                                 text: wizard.state === "fail" ? qsTr("Retry") : qsTr("\u25B6  Run")
                                 onClicked: wizard.startStep()
                             }
-
                             // ── Retry button — AUTOMATIC MODE, only on failure ──
                             QGCButton {
                                 Layout.fillWidth: true; primary: true
@@ -1125,14 +1111,12 @@ Column {
                                 text: qsTr("Retry")
                                 onClicked: wizard.startStep()
                             }
-
                             // ── Driving indicator ──
                             QGCLabel {
                                 Layout.fillWidth: true; visible: wizard.state === "driving"
                                 text: qsTr("Moving surfaces..."); font.bold: true
                                 color: PreFlightStatus.color(PreFlightStatus.Warn)
                             }
-
                             // ── Result ──
                             QGCLabel {
                                 Layout.fillWidth: true
@@ -1143,13 +1127,10 @@ Column {
                                           : qsTr("\u2717 No movement detected \u2013 check wiring and safety switch")
                                 color: wizard.state === "pass" ? PreFlightStatus.color(PreFlightStatus.Pass) : PreFlightStatus.color(PreFlightStatus.Fail)
                             }
-
                             // ── Auto advance notice — AUTOMATIC MODE ONLY ──
                             QGCLabel { Layout.fillWidth: true; visible: wizard.mode === "automatic" && wizard.state === "pass" && !wizard.isLastStep; text: qsTr("Advancing to next step..."); font.pointSize: ScreenTools.smallFontPointSize; opacity: 0.6 }
                             QGCLabel { Layout.fillWidth: true; visible: wizard.state === "pass" && wizard.isLastStep; text: qsTr("\u2713 All steps passed"); font.bold: true; color: PreFlightStatus.color(PreFlightStatus.Pass) }
-
                             Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 1; color: qgcPal.windowShadeDark }
-
                             // ── Navigation — MANUAL MODE ONLY ──
                             Flow {
                                 Layout.fillWidth: true; spacing: ScreenTools.defaultFontPixelWidth * 0.5
@@ -1158,7 +1139,6 @@ Column {
                                 QGCButton { text: qsTr("Next");    enabled: !wizard.isLastStep;      onClicked: wizard.goToStep(wizard.stepIndex + 1) }
                                 QGCButton { text: qsTr("Restart"); onClicked: { inspectionController.resetElevonTest(); wizard.goToStep(0) } }
                             }
-
                             QGCButton {
                                 Layout.fillWidth: true; text: qsTr("Finish Test")
                                 onClicked: {
