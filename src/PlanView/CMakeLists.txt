@@ -61,7 +61,13 @@ qt_add_qml_module(PlanViewModule
     SOURCES
         FileWriter.h
         FileWriter.cc
+        TTSHoverTerrainQuery.h
+        TTSHoverTerrainQuery.cc
     NO_PLUGIN
+)
+target_include_directories(PlanViewModule
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}/src/Terrain
 )
 
 

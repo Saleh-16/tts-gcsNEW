@@ -12,6 +12,7 @@ import QGroundControl.FactControls
 import QGroundControl.FlyView
 import QGroundControl.Geo
 import QGroundControl.Toolbar
+import QGroundControl.PlanView
 Item {
     id: _root
     readonly property int   _decimalPlaces: 8
@@ -181,6 +182,14 @@ Item {
     function insertTakeoffItemAfterCurrent() {
         var nextIndex = _missionController.currentPlanViewVIIndex + 1
         _missionController.insertTakeoffItem(mapCenter(), nextIndex, true /* makeCurrentItem */)
+        // TTS: إطفاء wizardMode تلقائياً بعد الإنشاء — نفس فعل زر "Done" الأصلي
+        // بمحرر Takeoff بالضبط (missionItem.wizardMode = false)، لأن لوحة اللوحة
+        // اليمنى اللي فيها هذا الزر مخفية بطلب صريح، فنسوي نفس التأثير برمجياً
+        // بدل ما نحتاج نضغطه يدوياً. المصدر: src/PlanView/SimpleItemEditor.qml
+        // (onClicked: missionItem.wizardMode = false) — مؤكد عبر grep بتاريخ 24 يوليو 2026.
+        if (_missionController.currentPlanViewItem) {
+            _missionController.currentPlanViewItem.wizardMode = false
+        }
     }
     function insertLandItemAfterCurrent() {
         var nextIndex = _missionController.currentPlanViewVIIndex + 1
@@ -365,6 +374,81 @@ Item {
                 opacity: _editingLayer != _layerRally ? editorMap._nonInteractiveOpacity : 1
             }
         }
+        // ══ TTS MOUSE COORDINATE READOUT — يتتبع الماوس فوق الخريطة، يعرض
+        //    Lat/Lon/Alt حي (زي شريط Mission Planner)، بدون التأثير على النقر
+        //    العادي بالخريطة (acceptedButtons: Qt.NoButton يسمح للنقر يمر تحته)
+        TTSHoverTerrainQuery {
+            id: ttsTerrainQuery
+            onTerrainAltitudeReceived: (success, altitude) => {
+                ttsCoordTracker._hoverAlt = success ? altitude : null
+            }
+        }
+
+        Timer {
+            id: ttsTerrainDebounce
+            interval: 150   // تأخير بسيط لتفادي إغراق نظام Terrain Query بطلب لكل بكسل
+            repeat: false
+            onTriggered: {
+                if (ttsCoordTracker._hoverCoord) {
+                    ttsTerrainQuery.requestAltitude(ttsCoordTracker._hoverCoord.latitude,
+                                                     ttsCoordTracker._hoverCoord.longitude)
+                }
+            }
+        }
+
+        MouseArea {
+            id: ttsCoordTracker
+            anchors.fill:    editorMap
+            hoverEnabled:    true
+            acceptedButtons: Qt.NoButton
+            propagateComposedEvents: true
+            z: QGroundControl.zOrderWidgets + 99
+
+            property var  _hoverCoord: null
+            property var  _hoverAlt:   null   // ارتفاع الأرض (متر AMSL) — null حتى توصل النتيجة
+
+            onPositionChanged: (mouse) => {
+                ttsCoordTracker._hoverCoord = editorMap.toCoordinate(Qt.point(mouse.x, mouse.y), false)
+                ttsCoordTracker._hoverAlt = null
+                ttsTerrainDebounce.restart()
+            }
+            onExited: {
+                ttsCoordTracker._hoverCoord = null
+                ttsCoordTracker._hoverAlt = null
+            }
+        }
+
+        Rectangle {
+            id:                   ttsCoordBox
+            z:                    QGroundControl.zOrderWidgets + 100
+            anchors.top:          editorMap.top
+            anchors.horizontalCenter: editorMap.horizontalCenter
+            anchors.topMargin:    _toolsMargin
+            width:                coordText.implicitWidth + ScreenTools.defaultFontPixelWidth * 2
+            height:               coordText.implicitHeight + ScreenTools.defaultFontPixelHeight * 0.6
+            radius:               4
+            color:                "#FFFFFF"
+            border.color:         "#1E2830"
+            border.width:         1
+            visible:              ttsCoordTracker._hoverCoord !== null
+
+            Text {
+                id:              coordText
+                anchors.centerIn: parent
+                font.family:     "monospace"
+                font.pixelSize:  ScreenTools.defaultFontPixelHeight * 0.75
+                font.bold:       true
+                color:           "#0A0C0E"
+                text: ttsCoordTracker._hoverCoord
+                      ? "LAT: " + ttsCoordTracker._hoverCoord.latitude.toFixed(7) +
+                        "   LON: " + ttsCoordTracker._hoverCoord.longitude.toFixed(7) +
+                        "   ALT: " + (ttsCoordTracker._hoverAlt !== null
+                                      ? QGroundControl.unitsConversion.metersToAppSettingsVerticalDistanceUnits(ttsCoordTracker._hoverAlt).toFixed(1) + " " + QGroundControl.unitsConversion.appSettingsVerticalDistanceUnitsString
+                                      : "…")
+                      : ""
+            }
+        }
+        // ══ END TTS MOUSE COORDINATE READOUT ═════════════════════════════
         // ══ TTS ZOOM CONTROL (+/-) — floating zoom buttons over the plan map ══
         Rectangle {
             id:                   ttsPlanZoom

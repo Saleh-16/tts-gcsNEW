@@ -47,14 +47,13 @@ Rectangle {
     property real colLat:    _u * 20
     property real colLon:    _u * 20
     property real colAlt:    _u * 18
-    property real colAd:     _u * 13    // Alt diff
     property real colGr:     _u * 10   // GRAD (%)
     property real colAn:     _u * 10   // ANGLE (° pitch)
     property real colAz:     _u * 10   // Azimuth
     property real colDp:     _u * 18   // Dist prev
     property real colAct:    _u * 16
     readonly property real _totalW: colSeq + colType + colLat + colLon + colAlt +
-                                     colAd + colGr + colAn + colDp + colAz + colAct
+                                     colGr + colAn + colDp + colAz + colAct
     color:        cBg
     border.color: cBorder
     border.width: 1
@@ -96,13 +95,11 @@ Rectangle {
         var facts = _dynamicFacts(item)
         return facts[slotIndex] || null
     }
-
     // ── نوع الارتفاع العام للمهمة — نفس المصدر المؤكد بـ SimpleItemEditor.qml:
     //    missionController.globalAltitudeFrame + AltitudeFrameMixed
     //    (grep بتاريخ 24 يوليو 2026 على SimpleItemEditor.qml و MissionController.h)
     readonly property int  _globalAltFrame:    _mc ? _mc.globalAltitudeFrame : QGroundControl.AltitudeFrameMixed
     readonly property bool _isGlobalAltMixed:  _globalAltFrame === QGroundControl.AltitudeFrameMixed
-
     // عنوان عمود ALT الديناميكي:
     //  - لو المهمة موحّدة (غير Mixed) → يعرض نوع الارتفاع العام (زي "ALT (Rel)")
     //  - لو Mixed → يعرض نوع الصف المحدد حالياً (لأن كل صف يقدر يكون مختلف)
@@ -116,9 +113,6 @@ Rectangle {
         var u = QGroundControl.altitudeFrameExtraUnits(_curItem.altitudeFrame)
         return u ? "ALT (" + u + ")" : "ALT"
     }
-
-    function _altVal(item) { return (item && item.altitude && item.altitude.rawValue !== undefined) ? item.altitude.rawValue : 0 }
-    function _setAlt(item, v) { if (item && item.altitude && item.altitude.rawValue !== undefined) item.altitude.rawValue = v }
     function _setLat(item, v) {
         if (!item || !item.coordinate) return
         item.coordinate = QtPositioning.coordinate(v, item.coordinate.longitude, item.coordinate.altitude)
@@ -127,40 +121,40 @@ Rectangle {
         if (!item || !item.coordinate) return
         item.coordinate = QtPositioning.coordinate(item.coordinate.latitude, v, item.coordinate.altitude)
     }
-    // ANGLE — نفس معادلة MissionStats.qml الحرفية (atan)، بما فيها استثناء VTOL Takeoff
+    // ANGLE — مؤكدة حرفياً عبر grep بتاريخ 24 يوليو 2026 من:
+    //   src/PlanView/SimpleItemEditor.qml:253
+    //   readonly property real _angle: _valid ? Math.atan2(_dAlt, _dist) * 180 / Math.PI : 0
+    //   readonly property bool  _valid: _dist > 0.1   (سطر 248)
+    // نفس المعادلة والعتبة تماماً — atan2 وليس atan، وعتبة >0.1 وليس >0
     function _angleText(item) {
         if (!item) return "-.-"
-        var isVTOLTakeoff = item.command === 84
         var dist = item.distance
-        if (!(dist > 0)) return "-.-"
-        var a = isVTOLTakeoff ? 0 : (Math.atan(item.altDifference / dist) * (180.0 / Math.PI))
+        if (!(dist > 0.1)) return "-.-"
+        var a = Math.atan2(item.altDifference, dist) * 180 / Math.PI
         return isNaN(a) ? "-.-" : (a >= 0 ? "+" : "") + a.toFixed(1) + "°"
     }
     // GRAD (%) — مؤكدة حرفياً عبر grep بتاريخ 24 يوليو 2026 من:
     //   src/PlanView/SimpleItemEditor.qml:251
     //   readonly property real _grad: _valid ? (_dAlt / _dist) * 100 : 0
-    // نفس المدخلات والمعادلة تماماً، بدون أي فرق.
+    //   readonly property bool  _valid: _dist > 0.1   (سطر 248)
+    // نفس المعادلة والعتبة تماماً، بدون أي فرق.
     function _gradPercentText(item) {
         if (!item) return "-.-"
-        var isVTOLTakeoff = item.command === 84
         var dist = item.distance
-        if (!(dist > 0)) return "-.-"
-        var g = isVTOLTakeoff ? 0 : (item.altDifference / dist) * 100
-        return isNaN(g) ? "-.-" : (g >= 0 ? "+" : "") + g.toFixed(1)
+        if (!(dist > 0.1)) return "-.-"
+        var g = (item.altDifference / dist) * 100
+        return isNaN(g) ? "-.-" : (g >= 0 ? "+" : "") + g.toFixed(1) + "%"
     }
-
-    // لون GRAD/ANGLE حسب الإشارة: أخضر = صعود (موجب)، برتقالي = هبوط (سالب)،
-    // رمادي = بدون بيانات — نفس فكرة تلوين اللوحة اليمنى
+    // لون GRAD/ANGLE حسب الإشارة — نفس ألوان ttsGeoTable الحرفية (سطر 382):
+    //   ttsGeoTable._angle < 0 ? "#FF6600" : "#00FF88"   ، رمادي لو !_valid (سطر 381)
     function _slopeColor(item) {
         if (!item) return wpRoot.cGrey
-        var isVTOLTakeoff = item.command === 84
         var dist = item.distance
-        if (!(dist > 0) || isVTOLTakeoff) return wpRoot.cGrey
+        if (!(dist > 0.1)) return wpRoot.cGrey
         var d = item.altDifference
         if (isNaN(d)) return wpRoot.cGrey
         return d < 0 ? wpRoot.cOrange : wpRoot.cNeon
     }
-
     function _remove(idx) {
         if (_mc && idx > 0 && typeof _mc.removeVisualItem === "function") _mc.removeVisualItem(idx)
     }
@@ -250,6 +244,7 @@ Rectangle {
             anchors.top:   parent.top
             anchors.bottom: parent.bottom
             hoverEnabled: true
+            preventStealing: true   // TTS: يمنع Flickable من سرقة السحب أثناء تحريك حافة العمود
             cursorShape:  Qt.SizeHorCursor
             property real _startGX: 0
             property real _startW:  0
@@ -271,6 +266,17 @@ Rectangle {
             }
         }
     }
+    // ══ TTS: طبقة حاجزة تمنع تسريب الضغط للخريطة تحت الجدول ══════════════
+    // بدونها، الضغط على مساحة فاضية بالجدول (غير مستهلكة من زر/حقل) كان
+    // ينفذ للخريطة تحته (يضيف نقطة مهمة رغم إن المستخدم يضغط على الجدول).
+    // موضوعة أول عنصر جوّه wpRoot عشان تبقى "تحت" باقي المحتوى بترتيب
+    // الأولوية (الأزرار والحقول تاخذ الضغطة أول، وهذي بس تمسك الباقي).
+    MouseArea {
+        anchors.fill: parent
+        acceptedButtons: Qt.AllButtons
+        onClicked: {}   // تستهلك الضغطة بدون أي فعل — فقط توقفها هنا
+    }
+    // ══ END TTS CLICK BLOCKER ═════════════════════════════════════════════
     // ═════════════════════════════════════════════════════════════════════
     //  1. شريط العنوان
     // ═════════════════════════════════════════════════════════════════════
@@ -363,6 +369,7 @@ Rectangle {
                 anchors.bottom: parent.bottom
                 clip:        true
                 model:       wpRoot._items
+                reuseItems:  false   // TTS: يمنع تعليق حالة الهوفر/الفوكس بين الصفوف
                 interactive: false            // السكرول العمودي يتبع الجدول الرئيسي
                 contentY:    wpList.contentY
                 delegate: Item {
@@ -382,7 +389,10 @@ Rectangle {
                     MouseArea {
                         anchors.fill: parent
                         z: -1
-                        onClicked: if (wpRoot._mc && fRowItem._item) wpRoot._mc.setCurrentPlanViewSeqNum(fRowItem._item.sequenceNumber, true)
+                        onClicked: {
+                            wpRoot.forceActiveFocus()   // TTS: يسحب التركيز عن أي حقل كتابة عالق بصف تاني
+                            if (wpRoot._mc && fRowItem._item) wpRoot._mc.setCurrentPlanViewSeqNum(fRowItem._item.sequenceNumber, true)
+                        }
                     }
                     Row {
                         anchors.fill: parent
@@ -420,6 +430,7 @@ Rectangle {
                                 anchors.fill: parent
                                 hoverEnabled: true
                                 onClicked: {
+                                    wpRoot.forceActiveFocus()
                                     if (fRowItem._item && wpRoot.planMasterController && wpRoot.map) {
                                         cmdDialogFactory.currentItem = fRowItem._item
                                         cmdDialogFactory.open()
@@ -459,7 +470,6 @@ Rectangle {
                         HeadCell { width: wpRoot.colLat;    label: wpRoot._curFieldName(0); colName: "colLat" }
                         HeadCell { width: wpRoot.colLon;    label: wpRoot._curFieldName(1); colName: "colLon" }
                         HeadCell { width: wpRoot.colAlt;    label: wpRoot._curAltHeaderLabel(); colName: "colAlt" }
-                        HeadCell { width: wpRoot.colAd;     label: "ALT diff";  colName: "colAd"   }
                         HeadCell { width: wpRoot.colAct;    label: "DELETE";       colName: "colAct"  }
                         HeadCell { width: wpRoot.colGr;     label: "GRAD";      colName: "colGr"   }
                         HeadCell { width: wpRoot.colAn;     label: "ANGLE";     colName: "colAn"   }
@@ -474,6 +484,7 @@ Rectangle {
                     height: hFlick.height - header.height
                     clip:   true
                     model:  wpRoot._items
+                    reuseItems: false   // TTS: يمنع تعليق حالة الهوفر/الفوكس بين الصفوف
                     ScrollBar.vertical: ScrollBar { }
                     delegate: Item {
                         id: rowItem
@@ -492,7 +503,10 @@ Rectangle {
                         MouseArea {
                             anchors.fill: parent
                             z: -1
-                            onClicked: if (wpRoot._mc && rowItem._item) wpRoot._mc.setCurrentPlanViewSeqNum(rowItem._item.sequenceNumber, true)
+                            onClicked: {
+                            wpRoot.forceActiveFocus()   // TTS: يسحب التركيز عن أي حقل كتابة عالق بصف تاني
+                            if (wpRoot._mc && rowItem._item) wpRoot._mc.setCurrentPlanViewSeqNum(rowItem._item.sequenceNumber, true)
+                        }
                         }
                         Row {
                             anchors.fill: parent
@@ -538,41 +552,66 @@ Rectangle {
                                     }
                                 }
                             }
-                            // ALT — رمادي مقفول لو الأمر ما يحدد إحداثيات ───────
-                            // ALT — رقم قابل للتعديل + AltFrameCombo الأصلي لتغيير
-                            // نوع الارتفاع (Rel/AMSL/AGL/AGLC)، نفس مكوّن QGC حرفياً
+                            // ALT — رمادي مقفول لو الأمر ما يحدد ارتفاع (specifiesAltitude)
+                            // تصحيح: كان مربوط غلط بـ specifiesCoordinate، بسببه Takeoff
+                            // (يحدد ارتفاع بدون إحداثيات) كان يظهر مقفول غلط
+                            //
+                            // تصحيح ثاني (24 يوليو 2026): FactTextField كان يعتمد على
+                            // Fact.value/.units التلقائية، واللي فيها خلل حقيقي بـ QGC —
+                            // بعض Facts الارتفاع (SimpleMissionItem._altitudeFact) تتبع
+                            // إعداد "Horizontal Distance" غلط بدل "Vertical Distance"
+                            // (مؤكد بالتحقيق مع المستخدم بتاريخ اليوم، السبب الجذري بكود
+                            // C++ خارج نطاقنا). الحل: نفس الأسلوب اليدوي المُثبت فعلياً
+                            // بملف المستخدم FlyViewCustomLayer.qml (_altText/_unitAlt) —
+                            // نقرأ rawValue (متر SI ثابت دايماً) ونحوّله يدوياً عبر
+                            // QGroundControl.unitsConversion الصريحة، بدل الاعتماد على
+                            // Fact.value/.units المكسورة. التحويل العكسي (وقت الكتابة)
+                            // عبر appSettingsVerticalDistanceUnitsToMeters — مؤكدة بالـ
+                            // grep من src/QmlControls/QmlUnitsConversion.h.
                             Rectangle {
                                 width:  wpRoot.colAlt
                                 height: wpRoot._rowH
                                 color:  "transparent"
                                 Rectangle { anchors.right: parent.right; anchors.top: parent.top; anchors.bottom: parent.bottom; width: 1; color: wpRoot.cBorder }
-
                                 Row {
                                     anchors.fill: parent
                                     anchors.margins: wpRoot._u * 0.2
                                     spacing: wpRoot._u * 0.3
-
                                     TextInput {
-                                        width: wpRoot._isGlobalAltMixed ? parent.width * 0.5 : parent.width
+                                        id: altTi
+                                        width: wpRoot._isGlobalAltMixed ? parent.width * 0.42 : parent.width * 0.6
                                         anchors.verticalCenter: parent.verticalCenter
                                         horizontalAlignment: TextInput.AlignHCenter
                                         font.pixelSize: wpRoot._fs
                                         font.family: "monospace"
-                                        color: rowItem._item && rowItem._item.specifiesCoordinate ? wpRoot.cNeon : wpRoot.cGrey
+                                        color: rowItem._item && rowItem._item.specifiesAltitude ? wpRoot.cNeon : wpRoot.cGrey
                                         selectByMouse: true
-                                        readOnly: !(rowItem._item && rowItem._item.specifiesCoordinate)
-                                        text: (rowItem._item && rowItem._item.specifiesCoordinate) ? wpRoot._altVal(rowItem._item).toFixed(0) : "—"
+                                        readOnly: !(rowItem._item && rowItem._item.specifiesAltitude)
+                                        text: (rowItem._item && rowItem._item.specifiesAltitude && rowItem._item.altitude)
+                                              ? QGroundControl.unitsConversion.metersToAppSettingsVerticalDistanceUnits(rowItem._item.altitude.rawValue).toFixed(1)
+                                              : "—"
                                         onEditingFinished: {
-                                            var v = parseFloat(text)
-                                            if (!isNaN(v)) wpRoot._setAlt(rowItem._item, v)
+                                            if (rowItem._item && rowItem._item.altitude) {
+                                                var v = parseFloat(text)
+                                                if (!isNaN(v)) {
+                                                    rowItem._item.altitude.rawValue = QGroundControl.unitsConversion.appSettingsVerticalDistanceUnitsToMeters(v)
+                                                }
+                                            }
                                             focus = false
                                         }
                                     }
-
-                                    Loader {
-                                        width: parent.width * 0.45
+                                    Text {
                                         anchors.verticalCenter: parent.verticalCenter
-                                        active: rowItem._item && rowItem._item.specifiesCoordinate && wpRoot.planMasterController && wpRoot.planMasterController.controllerVehicle && wpRoot._isGlobalAltMixed
+                                        visible: rowItem._item && rowItem._item.specifiesAltitude
+                                        text: QGroundControl.unitsConversion.appSettingsVerticalDistanceUnitsString
+                                        font.pixelSize: wpRoot._fs * 0.85
+                                        font.family: "monospace"
+                                        color: wpRoot.cGrey
+                                    }
+                                    Loader {
+                                        width: parent.width * 0.4
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        active: rowItem._item && rowItem._item.specifiesAltitude && wpRoot.planMasterController && wpRoot.planMasterController.controllerVehicle && wpRoot._isGlobalAltMixed
                                         sourceComponent: AltFrameCombo {
                                             width: parent.width
                                             font.pixelSize: wpRoot._fs * 0.75
@@ -582,13 +621,6 @@ Rectangle {
                                         }
                                     }
                                 }
-                            }
-                            // ── القيم المحسوبة (Facts حقيقية من VisualMissionItem،
-                            //    نفس مصدر MissionStats.qml بالحرف) ────────────────
-                            ReadCell {
-                                width: wpRoot.colAd
-                                text:  (rowItem._item && !isNaN(rowItem._item.altDifference)) ? rowItem._item.altDifference.toFixed(1) : "-.-"
-                                textColor: wpRoot.cWhite
                             }
                             // ── ACTIONS: DELETE فقط ──────────────────────────────
                             Item {
@@ -611,7 +643,7 @@ Rectangle {
                                             font.family: "monospace"
                                             color: wpRoot.cRed
                                         }
-                                        MouseArea { id: delMa; anchors.fill: parent; hoverEnabled: true; onClicked: wpRoot._remove(index) }
+                                        MouseArea { id: delMa; anchors.fill: parent; hoverEnabled: true; onClicked: { wpRoot.forceActiveFocus(); if (wpRoot._mc && rowItem._item) wpRoot._mc.setCurrentPlanViewSeqNum(rowItem._item.sequenceNumber, true); wpRoot._remove(index) } }
                                     }
                                 }
                             }
@@ -627,12 +659,14 @@ Rectangle {
                             }
                             ReadCell {
                                 width: wpRoot.colDp
-                                text:  (rowItem._item && !isNaN(rowItem._item.distance)) ? rowItem._item.distance.toFixed(1) + " m" : "-.-"
+                                text:  (rowItem._item && !isNaN(rowItem._item.distance))
+                                       ? QGroundControl.unitsConversion.metersToAppSettingsHorizontalDistanceUnits(rowItem._item.distance).toFixed(1) + " " + QGroundControl.unitsConversion.appSettingsHorizontalDistanceUnitsString
+                                       : "-.-"
                                 textColor: wpRoot.cWhite
                             }
                             ReadCell {
                                 width: wpRoot.colAz
-                                text:  (rowItem._item && !isNaN(rowItem._item.azimuth)) ? (Math.round(rowItem._item.azimuth) % 360).toString() : "-.-"
+                                text:  (rowItem._item && !isNaN(rowItem._item.azimuth)) ? (Math.round(rowItem._item.azimuth) % 360).toString() + "°" : "-.-"
                                 textColor: wpRoot.cWhite
                             }
                         }
