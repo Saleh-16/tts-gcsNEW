@@ -166,6 +166,15 @@ Item {
     function insertSimpleItemAfterCurrent(coordinate) {
         var nextIndex = _missionController.currentPlanViewVIIndex + 1
         _missionController.insertSimpleMissionItem(coordinate, nextIndex, true /* makeCurrentItem */)
+        // TTS: تعبئة الارتفاع تلقائياً بارتفاع الأرض (AMSL) عند نفس موقع النقطة
+        // الجديدة، بدل الرقم الثابت الافتراضي — يقدر المستخدم يعدّله يدوياً بعدين.
+        // يستخدم نفس مكوّن الاستعلام (TTSHoverTerrainQuery) المسجّل مسبقاً لصندوق
+        // إحداثيات الماوس، بس بنسخة مستقلة هنا لتفادي تضارب الإشارات.
+        var newItem = _missionController.currentPlanViewItem
+        if (newItem && newItem.specifiesAltitude) {
+            ttsNewItemTerrainQuery.pendingItem = newItem
+            ttsNewItemTerrainQuery.requestAltitude(coordinate.latitude, coordinate.longitude)
+        }
     }
     function insertROIAfterCurrent(coordinate) {
         var nextIndex = _missionController.currentPlanViewVIIndex + 1
@@ -187,8 +196,18 @@ Item {
         // اليمنى اللي فيها هذا الزر مخفية بطلب صريح، فنسوي نفس التأثير برمجياً
         // بدل ما نحتاج نضغطه يدوياً. المصدر: src/PlanView/SimpleItemEditor.qml
         // (onClicked: missionItem.wizardMode = false) — مؤكد عبر grep بتاريخ 24 يوليو 2026.
-        if (_missionController.currentPlanViewItem) {
-            _missionController.currentPlanViewItem.wizardMode = false
+        var newItem = _missionController.currentPlanViewItem
+        if (newItem) {
+            newItem.wizardMode = false
+        }
+        // TTS: نفس تعبئة الارتفاع تلقائياً من ارتفاع الأرض (AMSL) — Takeoff
+        // يُضاف بدالة منفصلة عن Waypoint العادي (insertTakeoffItem مو
+        // insertSimpleMissionItem)، فيحتاج نفس المنطق مكرر هنا. نقرأ إحداثية
+        // النقطة الفعلية بعد الإنشاء (newItem.coordinate) مو mapCenter() مباشرة،
+        // لأن Takeoff قد يعدّل موقعه داخلياً (زي ربطه بموقع الإقلاع).
+        if (newItem && newItem.specifiesAltitude && newItem.coordinate && newItem.coordinate.isValid) {
+            ttsNewItemTerrainQuery.pendingItem = newItem
+            ttsNewItemTerrainQuery.requestAltitude(newItem.coordinate.latitude, newItem.coordinate.longitude)
         }
     }
     function insertLandItemAfterCurrent() {
@@ -243,7 +262,12 @@ Item {
             property real _rightToolWidth: rightPanel.width + rightPanel.anchors.rightMargin
             property real _nonInteractiveOpacity: 0.5
             // Initial map position duplicates Fly view position
-            Component.onCompleted: editorMap.center = QGroundControl.flightMapPosition
+            // TTS: تعيين موقع افتراضي بالسعودية (الرياض تقريباً) بدل آخر موقع
+            // محفوظ (QGroundControl.flightMapPosition)، بطلب صريح من المستخدم.
+            Component.onCompleted: {
+                editorMap.center = QtPositioning.coordinate(17.5656, 44.2286)   // نجران تقريباً — جنوب السعودية
+                editorMap.zoomLevel = 6   // مستوى تقريب يظهر السعودية كاملة تقريباً
+            }
             onZoomLevelChanged: {
                 QGroundControl.flightMapZoom = editorMap.zoomLevel
             }
@@ -381,6 +405,25 @@ Item {
             id: ttsTerrainQuery
             onTerrainAltitudeReceived: (success, altitude) => {
                 ttsCoordTracker._hoverAlt = success ? altitude : null
+            }
+        }
+        // TTS: استعلام مستقل لتعبئة ارتفاع أي نقطة مهمة جديدة تلقائياً بارتفاع
+        // الأرض (AMSL)، بدل الرقم الافتراضي الثابت — منفصل عن ttsTerrainQuery
+        // فوق (المستخدم لصندوق الماوس الحي) عشان ما يصير تضارب بالإشارات.
+        TTSHoverTerrainQuery {
+            id: ttsNewItemTerrainQuery
+            property var pendingItem: null
+            onTerrainAltitudeReceived: (success, altitude) => {
+                if (success && ttsNewItemTerrainQuery.pendingItem && ttsNewItemTerrainQuery.pendingItem.specifiesAltitude) {
+                    // TTS: الارتفاع النهائي = ارتفاع الأرض (Terrain AMSL) + القيمة
+                    // الافتراضية المضبوطة بـ "Waypoints Altitude" (400 مثلاً)،
+                    // بدل استبدال الرقم بالكامل — نفس مصدر الرقم الافتراضي
+                    // (defaultMissionItemAltitude.rawValue) بدون تخمين.
+                    var defaultOffset = QGroundControl.settingsManager.appSettings.defaultMissionItemAltitude.rawValue
+                    ttsNewItemTerrainQuery.pendingItem.altitudeFrame = QGroundControl.AltitudeFrameAbsolute
+                    ttsNewItemTerrainQuery.pendingItem.altitude.rawValue = altitude + defaultOffset
+                }
+                ttsNewItemTerrainQuery.pendingItem = null
             }
         }
 

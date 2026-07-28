@@ -33,7 +33,6 @@ TreeView {
         }
     }
     property var _missionController: planMasterController.missionController
-
     // TTS: ضمان إضافي — فتح Plan Info افتراضياً من أول لحظة يظهر فيها المكوّن
     Component.onCompleted: {
         var row = _rowFor(_missionController.planFileGroupIndex)
@@ -118,6 +117,10 @@ TreeView {
             } else {
                 // Empty plan: all sections stay collapsed — user opens what they need
                 root.contentY = 0
+                // TTS: خطة جديدة فاضية → Alt Frame يبدأ تلقائياً على AMSL (Absolute)
+                // بدل الافتراضي الأصلي (Relative)، بطلب صريح. ما يأثر على خطط
+                // محفوظة قبل (اللي عندها containsItems=true تدخل الفرع الأول فوق).
+                root._missionController.globalAltitudeFrame = QGroundControl.AltitudeFrameAbsolute
             }
             root._lastMissionItemCount = _missionController.visualItems ? _missionController.visualItems.count : 0
             root.editingLayerChangeRequested(root._layerMission)
@@ -236,7 +239,6 @@ TreeView {
         // In create-new-plan mode, only show Plan Info and Defaults groups and their children
         readonly property bool _visibleInCreateMode: nodeType === "planFileGroup" || nodeType === "planFileInfo"
                                                      || nodeType === "defaultsGroup" || nodeType === "defaultsInfo"
-
         // ══ TTS: إخفاء المجموعات الأربعة التالية من اللوحة اليمنى بطلب صريح من المستخدم ══
         // Mission Items / GeoFence / Rally Points / Transform — لأنها الآن تُدار عبر
         // WaypointTable المخصص (src/PlanView/WaypointTable.qml) بدل هذي اللوحة.
@@ -247,7 +249,6 @@ TreeView {
                                               || nodeType === "rallyGroup"     || nodeType === "rallyHeader" || nodeType === "rallyItem"
                                               || nodeType === "transformGroup" || nodeType === "transformEditor"
         // ══ END TTS HIDDEN GROUPS ══════════════════════════════════════════════════════
-
         onImplicitHeightChanged: layoutTimer.restart()
         // TTS: إعادة تخطيط إضافية عند تغيّر height نفسه — ضروري عشان تختفي
         // الصفوف المخفية (_ttsHiddenGroup) فعلياً من التخطيط بدل ما تترك فراغ

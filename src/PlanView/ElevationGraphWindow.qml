@@ -3,6 +3,7 @@ import QtQuick
 import QtQuick.Window
 import QtQuick.Controls
 import QtQuick.Layouts
+
 import QGroundControl
 import QGroundControl.Controls
 
@@ -13,11 +14,13 @@ import QGroundControl.Controls
 ///
 /// Mission-Planner-style drag-to-zoom: left mouse button drag draws a
 /// horizontal selection band across the chart. On release, the view zooms
-/// to that distance range. The vertical (altitude) axis keeps the full
-/// mission's altitude range — TerrainProfile doesn't expose a way to query
-/// altitude for an arbitrary sub-range, so true vertical auto-fit isn't
-/// currently possible without a C++ change; horizontal zoom still works
-/// fully on its own. Reset Zoom restores the full mission view.
+/// to that distance range.
+///
+/// The vertical (altitude) axis auto-fits to whatever altitudes fall inside
+/// the selected horizontal span. That fit is computed inside TerrainStatus
+/// (autoFitY) from the plotted series data itself, so this window only has to
+/// drive the X range and leave the Y range unset. Reset Zoom restores the
+/// full mission view.
 Window {
     id: elevationWindow
 
@@ -40,10 +43,22 @@ Window {
 
     property real _viewMinX: 0
     property real _viewMaxX: 100
+
+    /* Y range is no longer driven from here — TerrainStatus.autoFitY computes
+       it from the visible slice of the series data. Kept commented rather than
+       deleted in case an explicit vertical range is ever needed again.
     property real _viewMinY: 0
     property real _viewMaxY: 100
+    */
 
+    /// Minimum drag length, in pixels, that counts as a zoom rather than a
+    /// stray click.
     readonly property real _minDragPixels: 10
+
+    /// Smallest distance span the view may be zoomed to, in the horizontal
+    /// distance unit currently in use. Prevents zooming into a meaningless
+    /// sliver where the axis labels would all collapse onto one value.
+    readonly property real _minZoomSpan: 1
 
     ColumnLayout {
         anchors.fill:    parent
@@ -79,8 +94,13 @@ Window {
 
                 externalMinX: elevationWindow._boundsCaptured ? elevationWindow._viewMinX : NaN
                 externalMaxX: elevationWindow._boundsCaptured ? elevationWindow._viewMaxX : NaN
-                externalMinY: elevationWindow._boundsCaptured ? elevationWindow._viewMinY : NaN
-                externalMaxY: elevationWindow._boundsCaptured ? elevationWindow._viewMaxY : NaN
+
+                // Let TerrainStatus derive the altitude range from the data
+                // inside the visible distance span. Leaving the explicit
+                // overrides at NaN is what enables that path.
+                autoFitY:     true
+                externalMinY: NaN
+                externalMaxY: NaN
 
                 onSetCurrentSeqNum: {
                     if (elevationWindow.missionController)
@@ -97,9 +117,31 @@ Window {
                 property real startX: 0
                 property real currentX: 0
 
+                /// The chart's actual plot area, expressed in this MouseArea's
+                /// coordinates. Needed because the plot does not start at x=0:
+                /// the Y axis labels and the rotated "Height AMSL" title take up
+                /// space on the left, and GraphsView adds a right margin. Mapping
+                /// drag pixels against the full item width instead would shift
+                /// every zoom to the right by that margin.
+                readonly property rect plotRect: {
+                    if (!terrainStatus.chart) {
+                        return Qt.rect(0, 0, 0, 0)
+                    }
+                    var pa = terrainStatus.chart.plotArea
+                    var tl = dragZoomArea.mapFromItem(terrainStatus.chart, pa.x, pa.y)
+                    return Qt.rect(tl.x, tl.y, pa.width, pa.height)
+                }
+
+                /// Drag bounds clamped to the plot area, so a drag that starts or
+                /// ends over the axis labels still selects a valid range.
+                readonly property real clampedLo: Math.max(plotRect.x,
+                                                    Math.min(startX, currentX))
+                readonly property real clampedHi: Math.min(plotRect.x + plotRect.width,
+                                                    Math.max(startX, currentX))
+
                 onPressed: (mouse) => {
                     dragging = true
-                    startX = mouse.x
+                    startX   = mouse.x
                     currentX = mouse.x
                 }
 
@@ -111,31 +153,25 @@ Window {
                     if (!dragging) return
                     dragging = false
 
-                    var pixelWidth = Math.abs(currentX - startX)
-                    if (pixelWidth < elevationWindow._minDragPixels) {
-                        return
-                    }
+                    if (plotRect.width <= 0) return
+                    if (clampedHi - clampedLo < elevationWindow._minDragPixels) return
 
-                    var loX = Math.min(startX, currentX)
-                    var hiX = Math.max(startX, currentX)
+                    var spanX      = elevationWindow._viewMaxX - elevationWindow._viewMinX
+                    var fractionLo = (clampedLo - plotRect.x) / plotRect.width
+                    var fractionHi = (clampedHi - plotRect.x) / plotRect.width
 
-                    var spanX = elevationWindow._viewMaxX - elevationWindow._viewMinX
-                    var fractionLo = loX / chartHost.width
-                    var fractionHi = hiX / chartHost.width
-
-                    var newMinX = elevationWindow._viewMinX + fractionLo * spanX
-                    var newMaxX = elevationWindow._viewMinX + fractionHi * spanX
-
-                    elevationWindow._zoomToRange(newMinX, newMaxX)
+                    elevationWindow._zoomToRange(
+                        elevationWindow._viewMinX + fractionLo * spanX,
+                        elevationWindow._viewMinX + fractionHi * spanX)
                 }
 
                 Rectangle {
                     visible: dragZoomArea.dragging &&
-                             Math.abs(dragZoomArea.currentX - dragZoomArea.startX) >= elevationWindow._minDragPixels
-                    x:      Math.min(dragZoomArea.startX, dragZoomArea.currentX)
-                    y:      0
-                    width:  Math.abs(dragZoomArea.currentX - dragZoomArea.startX)
-                    height: parent.height
+                             (dragZoomArea.clampedHi - dragZoomArea.clampedLo) >= elevationWindow._minDragPixels
+                    x:      dragZoomArea.clampedLo
+                    y:      dragZoomArea.plotRect.y
+                    width:  Math.max(0, dragZoomArea.clampedHi - dragZoomArea.clampedLo)
+                    height: dragZoomArea.plotRect.height
                     color:  "#4000FF88"
                     border.color: "#00FF88"
                     border.width: 1
@@ -162,6 +198,8 @@ Window {
         var newFullMinY = isNaN(axisMinY) ? 0 : axisMinY
         var newFullMaxY = isNaN(axisMaxY) || axisMaxY <= newFullMinY ? newFullMinY + 100 : axisMaxY
 
+        // TerrainStatus falls back to a 0..100 placeholder altitude range until
+        // real terrain data arrives; capturing then would lock in bogus bounds.
         var looksLikePlaceholder = (newFullMinY === 0 && newFullMaxY === 100) || (axisMaxX <= 0)
         if (looksLikePlaceholder) return
 
@@ -172,26 +210,19 @@ Window {
 
         _viewMinX = _fullMinX
         _viewMaxX = _fullMaxX
-        _viewMinY = _fullMinY
-        _viewMaxY = _fullMaxY
 
         _boundsCaptured = true
     }
 
     function _zoomToRange(newMinX, newMaxX) {
-        if (newMaxX - newMinX < 1) return
-
+        if (newMaxX - newMinX < _minZoomSpan) return
         _viewMinX = newMinX
         _viewMaxX = newMaxX
-        _viewMinY = _fullMinY
-        _viewMaxY = _fullMaxY
     }
 
     function _resetZoom() {
         _viewMinX = _fullMinX
         _viewMaxX = _fullMaxX
-        _viewMinY = _fullMinY
-        _viewMaxY = _fullMaxY
     }
 
     onVisibleChanged: {

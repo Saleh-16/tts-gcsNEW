@@ -248,12 +248,14 @@ void APMSensorsComponentController::calibrateCompass()
     );
 }
 
-void APMSensorsComponentController::calibrateCompassNorth(float lat, float lon, int mask)
+void APMSensorsComponentController::calibrateCompassNorth(float lat, float lon, float yaw, int mask)
 {
     _calTypeInProgress = QGCMAVLink::CalibrationMag;
     _startLogCalibration();
     (void) connect(_vehicle, &Vehicle::mavCommandResult, this, &APMSensorsComponentController::_mavCommandResult, Qt::UniqueConnection);
-    _vehicle->sendMavCommand(_vehicle->defaultComponentId(), MAV_CMD_FIXED_MAG_CAL_YAW, true /* showError */, 0 /* north*/, mask, lat, lon);
+    // TTS: yaw صار معامل قابل للتعديل بدل 0 (شمال) ثابت — يسمح بمعايرة الطائرة
+    // بأي اتجاه معروف، مو الشمال بس (نفس مرونة "MagCal Yaw" بـ Mission Planner)
+    _vehicle->sendMavCommand(_vehicle->defaultComponentId(), MAV_CMD_FIXED_MAG_CAL_YAW, true /* showError */, yaw, mask, lat, lon);
 }
 
 void APMSensorsComponentController::calibrateAccel(bool doSimpleAccelCal)
