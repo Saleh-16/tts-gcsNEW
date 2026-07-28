@@ -28,20 +28,28 @@ import QtCore
 ///                                Retry / Back / Next per step). Reads elevon
 ///                                servo assignment, RC channel mapping and
 ///                                stick calibration from the vehicle itself;
-///                                nothing is hardcoded.
+///                                nothing is hardcoded. Supports airframes
+///                                with MULTIPLE servos per side (e.g. dual
+///                                redundant elevon actuators) — every servo
+///                                matching SERVOx_FUNCTION 77/78 is detected,
+///                                and ALL of them on a given side must move
+///                                for that side to count as passing (strict
+///                                AND), so a single failed servo isn't masked
+///                                by a working twin.
 ///   3. Manual Checklist       — 6 operator confirmations
 ///   4. Inspection Summary     — go / no-go banner, DONE / fly-at-own-risk
 ///
 /// On DONE (or CONFIRM, for the fly-at-own-risk path) the inspection report
-/// is silently saved via Vehicle::saveTextToFile() and the popup closes
-/// automatically. The operator sees nothing about the save itself — the
-/// file exists purely for auditing and compliance.
+/// is silently saved via the global fileWriter context property (the same
+/// proven pattern already used elsewhere in the app for Risk Report saves —
+/// see MissionReviewPanel.qml). The operator sees nothing about the save
+/// itself — the file exists purely for auditing and compliance.
 ///
-/// Portability: the save path is resolved at runtime from
-/// StandardPaths.HomeLocation via toLocalFile() (not a manual "file://"
-/// string strip), so it lands correctly in the current user's home
-/// directory on Linux, Windows, and macOS alike — nothing is hardcoded
-/// to a specific person's account or platform-specific path format.
+/// Save location: QGroundControl.settingsManager.appSettings.missionSavePath
+/// — QGC's own fixed mission-save folder, used consistently across the app.
+/// This avoids all StandardPaths/toLocalFile platform-portability issues
+/// entirely, since this setting is already guaranteed to resolve correctly
+/// on every platform QGC runs on (Linux, Windows, macOS).
 Column {
     id: control
     property int  sectionIndex: 9
@@ -159,9 +167,14 @@ Column {
         /// Operator-entered name, REQUIRED for accountability before the
         /// control surface test or DONE / CONFIRM can proceed.
         property string operatorName: ""
-        // Auto-detected elevon servo numbers (from SERVOn_FUNCTION 77/78)
-        property int detectedLeftServo:  -1
-        property int detectedRightServo: -1
+        // ── Auto-detected elevon servo numbers (from SERVOn_FUNCTION 77/78)
+        //    ─────────────────────────────────────────────────────────────
+        //    Arrays, not single numbers: an airframe may have more than one
+        //    servo assigned to the same side (e.g. dual redundant elevon
+        //    actuators). Every matching SERVOx_FUNCTION is collected, not
+        //    just the first one found.
+        property var detectedLeftServos:  []   // e.g. [1] or [1, 5]
+        property var detectedRightServos: []   // e.g. [2] or [2, 6]
         readonly property int overallStatus:
             PreFlightStatus.worst(PreFlightStatus.worst(automaticStatus, controlSurfaceStatus), manualStatus)
         // Judged from the three group results directly, not from
@@ -398,20 +411,26 @@ Column {
         function canRunElevonTest() {
             return _ok && _try(function() { return !_v.armed }) === true
         }
-        /// Scans SERVO1–16_FUNCTION for Elevon Left (77) and Right (78).
-        /// Called once when the test starts — no hardcoded servo numbers.
+        /// Scans SERVO1–16_FUNCTION for ALL servos assigned to Elevon Left
+        /// (77) and Elevon Right (78) — not just the first one found.
+        /// Airframes with dual (or more) servos per surface — e.g.
+        /// redundant elevon actuators — are fully supported: every matching
+        /// servo number is collected into the corresponding array. Called
+        /// once when the test starts — no hardcoded servo numbers.
         function detectElevons() {
-            detectedLeftServo  = -1
-            detectedRightServo = -1
+            var left = []
+            var right = []
             for (var i = 1; i <= 16; ++i) {
                 var f = _paramFact("SERVO" + i + "_FUNCTION")
                 if (!f) continue
-                if (f.rawValue === 77 && detectedLeftServo  < 0) detectedLeftServo  = i
-                if (f.rawValue === 78 && detectedRightServo < 0) detectedRightServo = i
+                if (f.rawValue === 77) left.push(i)
+                if (f.rawValue === 78) right.push(i)
             }
+            detectedLeftServos  = left
+            detectedRightServos = right
         }
         function elevonsDetected() {
-            return detectedLeftServo > 0 && detectedRightServo > 0
+            return detectedLeftServos.length > 0 && detectedRightServos.length > 0
         }
         /// Reads RCMAP_PITCH/ROLL to find which physical RC channel carries
         /// each axis, then reads RCn_TRIM/MIN/MAX to compute the override
@@ -467,12 +486,19 @@ Column {
         function releaseOverride() {
             _try(function() { _v.releaseRcOverride() })
         }
-        /// Reads the current PWM of both detected elevon outputs.
+        /// Reads the current PWM of every detected elevon servo on both
+        /// sides, returning an array per side rather than a single value —
+        /// supports any number of servos per side (1, 2, or more).
         function readServos() {
-            return {
-                "left":  _servoOutput(detectedLeftServo),
-                "right": _servoOutput(detectedRightServo)
+            var leftValues = []
+            var rightValues = []
+            for (var i = 0; i < detectedLeftServos.length; ++i) {
+                leftValues.push(_servoOutput(detectedLeftServos[i]))
             }
+            for (var j = 0; j < detectedRightServos.length; ++j) {
+                rightValues.push(_servoOutput(detectedRightServos[j]))
+            }
+            return { "left": leftValues, "right": rightValues }
         }
         /// Entry point for the control surface test:
         /// 1. Checks the vehicle is disarmed
@@ -500,7 +526,8 @@ Column {
             readRcCalibration()
             populateStepValues()
             testMessage      = qsTr("Detected: SERVO%1 (Left) \u00B7 SERVO%2 (Right) \u00B7 Pitch=ch%3 Roll=ch%4")
-                                   .arg(detectedLeftServo).arg(detectedRightServo)
+                                   .arg(detectedLeftServos.join(","))
+                                   .arg(detectedRightServos.join(","))
                                    .arg(rcPitchChannel).arg(rcRollChannel)
             testMessageLevel = PreFlightStatus.Pass
             controlSurfaceTestStarted = true
@@ -517,16 +544,19 @@ Column {
             hazardAcknowledged        = false
         }
         // ═══════════════════════════════════════════════════════════════
-        //  SILENT REPORT SAVE — ~/Documents/PFI/ on the current machine
+        //  SILENT REPORT SAVE — via global fileWriter (same proven pattern
+        //  used elsewhere in the app, e.g. Risk Report save)
         // ═══════════════════════════════════════════════════════════════
-        /// Builds the full inspection report and saves it silently via
-        /// Vehicle::saveTextToFile(). No UI feedback is shown for the save
-        /// itself — only the popup closing signals completion.
+        /// Builds the full inspection report and saves it silently via the
+        /// global fileWriter context property (registered in
+        /// QGCCorePlugin.cc, available everywhere in QML with no import).
+        /// No UI feedback is shown for the save itself — only the popup
+        /// closing signals completion.
         ///
-        /// The path is resolved from StandardPaths.HomeLocation at call time,
-        /// so it always points at the current user's home directory
-        /// regardless of machine or username. saveTextToFile() creates the
-        /// PFI subdirectory if it does not already exist.
+        /// Save location: QGroundControl.settingsManager.appSettings
+        /// .missionSavePath — QGC's own fixed mission-save folder. This is
+        /// the exact same location/pattern already proven to work on every
+        /// platform via MissionReviewPanel.qml's Risk Report save.
         ///
         /// Both the aircraft serial (fixed "M X-X" format) and operator name
         /// are required fields (enforced by the calling buttons' enabled
@@ -574,9 +604,9 @@ Column {
             }
             lines.push("")
             lines.push("-- Servo Configuration --")
-            if (detectedLeftServo > 0) {
-                lines.push("Left Elevon:    SERVO" + detectedLeftServo)
-                lines.push("Right Elevon:   SERVO" + detectedRightServo)
+            if (detectedLeftServos.length > 0) {
+                lines.push("Left Elevon:    SERVO" + detectedLeftServos.join(", SERVO"))
+                lines.push("Right Elevon:   SERVO" + detectedRightServos.join(", SERVO"))
             } else {
                 lines.push("Elevon outputs not detected")
             }
@@ -617,21 +647,20 @@ Column {
             var serial   = vehicleSerial.trim().replace(/[^a-zA-Z0-9_-]/g, "")
             var operator = operatorName.trim().replace(/[^a-zA-Z0-9_-]/g, "")
             var namePart = serial + "_" + operator + "_"
-            // Portable path: toLocalFile() resolves the file:// URL to a
-            // correctly-formatted local path on every platform. A manual
-            // .toString().replace("file://","") leaves a leading slash
-            // before drive letters on Windows (e.g. "/C:/Users/...")
-            // which is not a valid path there — this was the exact reason
-            // the report saved fine on Linux but silently failed to save
-            // on Windows.
-            var homeUrl  = _try(function() { return StandardPaths.writableLocation(StandardPaths.HomeLocation) })
-            var homePath = homeUrl ? homeUrl.toLocalFile() : ""
-            var path     = homePath + "/Documents/PFI/PFI_" + namePart + timestamp + ".txt"
-            // Silent save via C++ Vehicle::saveTextToFile() — creates the
-            // directory if needed. XMLHttpRequest PUT does not write local
-            // files in QML, so this goes through the vehicle instead.
-            if (_ok && homePath !== "") {
-                _v.saveTextToFile(path, content)
+
+            // Save using the same proven pattern already used elsewhere in
+            // the app (see MissionReviewPanel.qml's Risk Report save):
+            // fileWriter is a global context property (registered in
+            // QGCCorePlugin.cc), and appSettings.missionSavePath is QGC's
+            // own fixed mission-save location — sidesteps all
+            // StandardPaths/toLocalFile portability issues entirely.
+            var saveDir  = _try(function() { return QGroundControl.settingsManager.appSettings.missionSavePath.toString() }) || ""
+            var savePath = saveDir + "/PFI_" + namePart + timestamp + ".txt"
+
+            if (fileWriter.save(savePath, content)) {
+                console.log("PFI report saved: " + savePath + " (" + content.length + " chars)")
+            } else {
+                console.warn("FAILED to save PFI report: " + savePath)
             }
         }
     }
@@ -967,10 +996,13 @@ Column {
                             property int    stepIndex:   0
                             /// idle | driving | pass | fail
                             property string state:       "idle"
-                            property int    beforeLeft:  -1
-                            property int    beforeRight: -1
-                            property int    afterLeft:   -1
-                            property int    afterRight:  -1
+                            /// Arrays of PWM readings per side — one entry
+                            /// per detected servo, supporting any number of
+                            /// servos per side.
+                            property var beforeLeft:  []
+                            property var beforeRight: []
+                            property var afterLeft:   []
+                            property var afterRight:  []
                             readonly property var  steps:      inspectionController.elevonSteps
                             readonly property var  step:       steps.get(stepIndex)
                             readonly property bool isLastStep: stepIndex === steps.count - 1
@@ -992,15 +1024,21 @@ Column {
                             /// Reads servos, sends override, starts readback timer.
                             function startStep() {
                                 var s = inspectionController.readServos()
-                                beforeLeft = s.left; beforeRight = s.right
+                                beforeLeft  = s.left
+                                beforeRight = s.right
                                 state = "driving"
                                 inspectionController.driveStep(stepIndex)
                                 readbackTimer.restart()
                             }
-                            /// Compares servo PWM before and after. A change
-                            /// greater than 30µs counts as movement, filtering
-                            /// noise without missing real deflection. Releases
-                            /// the override immediately after reading.
+                            /// Compares every detected servo's PWM before and
+                            /// after, per side. Strict AND: every servo on a
+                            /// given side must move by more than 30µs for
+                            /// that side to count as moved — a single
+                            /// unresponsive servo (e.g. one of two redundant
+                            /// actuators failing) fails the whole step,
+                            /// rather than being masked by its working twin.
+                            /// Both sides must pass for the step overall to
+                            /// pass.
                             ///
                             /// In Automatic mode, a passing step also queues
                             /// the next step's startStep() via autoAdvanceTimer
@@ -1008,11 +1046,23 @@ Column {
                             /// whole sequence finishes.
                             function checkReadback() {
                                 var s = inspectionController.readServos()
-                                afterLeft = s.left; afterRight = s.right
+                                afterLeft  = s.left
+                                afterRight = s.right
                                 inspectionController.releaseOverride()
-                                var leftMoved  = afterLeft  > 0 && Math.abs(afterLeft  - beforeLeft)  > 30
-                                var rightMoved = afterRight > 0 && Math.abs(afterRight - beforeRight) > 30
-                                if (leftMoved || rightMoved) {
+
+                                var allLeftMoved = beforeLeft.length > 0
+                                for (var i = 0; i < beforeLeft.length; ++i) {
+                                    var moved = afterLeft[i] > 0 && Math.abs(afterLeft[i] - beforeLeft[i]) > 30
+                                    if (!moved) { allLeftMoved = false; break }
+                                }
+
+                                var allRightMoved = beforeRight.length > 0
+                                for (var j = 0; j < beforeRight.length; ++j) {
+                                    var movedR = afterRight[j] > 0 && Math.abs(afterRight[j] - beforeRight[j]) > 30
+                                    if (!movedR) { allRightMoved = false; break }
+                                }
+
+                                if (allLeftMoved && allRightMoved) {
                                     state = "pass"
                                     inspectionController.setElevonStepStatus(stepIndex, PreFlightStatus.Pass)
                                     if (mode === "automatic") autoAdvanceTimer.restart()
@@ -1123,8 +1173,12 @@ Column {
                                 visible: wizard.state === "pass" || wizard.state === "fail"
                                 wrapMode: Text.WordWrap; font.pointSize: ScreenTools.smallFontPointSize
                                 text: wizard.state === "pass"
-                                          ? qsTr("\u2713 Moved \u2013 L %1\u2192%2  \u00B7  R %3\u2192%4 \u00B5s").arg(wizard.beforeLeft).arg(wizard.afterLeft).arg(wizard.beforeRight).arg(wizard.afterRight)
-                                          : qsTr("\u2717 No movement detected \u2013 check wiring and safety switch")
+                                          ? qsTr("\u2713 Moved \u2013 L [%1]\u2192[%2]  \u00B7  R [%3]\u2192[%4] \u00B5s")
+                                                .arg(wizard.beforeLeft.join(","))
+                                                .arg(wizard.afterLeft.join(","))
+                                                .arg(wizard.beforeRight.join(","))
+                                                .arg(wizard.afterRight.join(","))
+                                          : qsTr("\u2717 No movement detected on at least one servo \u2013 check wiring and safety switch")
                                 color: wizard.state === "pass" ? PreFlightStatus.color(PreFlightStatus.Pass) : PreFlightStatus.color(PreFlightStatus.Fail)
                             }
                             // ── Auto advance notice — AUTOMATIC MODE ONLY ──
