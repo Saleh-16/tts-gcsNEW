@@ -9,9 +9,6 @@ Rectangle {
     id: _root
     required property var missionController
     required property var planMasterController
-
-    // TTS: مرجع الخريطة — يحمل ttsCoordFormat المشترك مع الجدول وصندوق الماوس
-    property var editorMap: null
     property var _controllerVehicle: planMasterController.controllerVehicle
     property var _visualItems: missionController.visualItems
     property bool _noMissionItemsAdded: _visualItems ? _visualItems.count <= 1 : true
@@ -134,26 +131,6 @@ Rectangle {
             }
             QGCLabel {
                 text: QGroundControl.unitsConversion.appSettingsVerticalDistanceUnitsString
-            }
-        }
-
-        // ── TTS: صيغة عرض الإحداثيات (GEO / UTM / MGRS) ──────────────────
-        //     تنعكس فوراً على صندوق إحداثيات الماوس فوق الخريطة وعلى أعمدة
-        //     الجدول السفلي. التحويل بدوال QGC الأصلية (QGCGeo).
-        RowLayout {
-            Layout.fillWidth: true
-            visible: _root.editorMap !== null
-            spacing: ScreenTools.defaultFontPixelWidth * 0.5
-
-            QGCLabel { text: qsTr("Coordinate Format") }
-
-            QGCComboBox {
-                Layout.fillWidth: true
-                model: [ qsTr("Geographic"), qsTr("UTM"), qsTr("MGRS") ]
-                currentIndex: _root.editorMap ? _root.editorMap.ttsCoordFormat : 0
-                onActivated: (index) => {
-                    if (_root.editorMap) _root.editorMap.ttsCoordFormat = index
-                }
             }
         }
         // ── TTS: قسم Flight Speed محذوف بطلب صريح — الكود القديم معلّق ──────

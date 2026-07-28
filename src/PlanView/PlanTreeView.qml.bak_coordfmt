@@ -283,8 +283,7 @@ TreeView {
                     setSource(delegateRoot._qrcBase + "MissionDefaultsEditor.qml", {
                         width:                  Qt.binding(() => delegateRoot.width),
                         missionController:      root._missionController,
-                        planMasterController:   root.planMasterController,
-                        editorMap:              root.editorMap
+                        planMasterController:   root.planMasterController
                     })
                     break
                 case "missionItem":

@@ -517,16 +517,6 @@ Rectangle {
                                     id: latCtl
                                     coordinate: (rowItem._item && rowItem._item.specifiesCoordinate && rowItem._item.coordinate)
                                                 ? rowItem._item.coordinate : QtPositioning.coordinate()
-                                    // TTS: initValues() هي التي تملأ الـ Facts فعلياً
-                                    onCoordinateChanged: initValues()
-                                    Component.onCompleted: initValues()
-                                }
-                                // TTS: الحارس wasInvalid يمنع الإشارة عند أول انتقال
-                                //      invalid→valid، فنراقب المصدر مباشرة
-                                Connections {
-                                    target: rowItem._item
-                                    ignoreUnknownSignals: true
-                                    function onCoordinateChanged() { latCtl.initValues() }
                                 }
 
                                 text: {
@@ -555,16 +545,6 @@ Rectangle {
                                     id: lonCtl
                                     coordinate: (rowItem._item && rowItem._item.specifiesCoordinate && rowItem._item.coordinate)
                                                 ? rowItem._item.coordinate : QtPositioning.coordinate()
-                                    // TTS: initValues() هي التي تملأ الـ Facts فعلياً
-                                    onCoordinateChanged: initValues()
-                                    Component.onCompleted: initValues()
-                                }
-                                // TTS: الحارس wasInvalid يمنع الإشارة عند أول انتقال
-                                //      invalid→valid، فنراقب المصدر مباشرة
-                                Connections {
-                                    target: rowItem._item
-                                    ignoreUnknownSignals: true
-                                    function onCoordinateChanged() { lonCtl.initValues() }
                                 }
 
                                 text: {

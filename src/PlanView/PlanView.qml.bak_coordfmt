@@ -56,27 +56,6 @@ Item {
         coordinate.altitude  = coordinate.altitude.toFixed(_decimalPlaces)
         return coordinate
     }
-
-    // TTS: تنسيق إحداثي حسب الصيغة المختارة من قسم Defaults.
-    //      التحويل كله بدوال QGC الأصلية عبر TransformPositionController
-    //      (QGCGeo::convertGeoToUTM / convertGeoToMGRS) — بدون أي حساب مستقل.
-    function ttsFormatCoord(coord) {
-        if (!coord || !coord.isValid) return ""
-        var fmt = editorMap.ttsCoordFormat
-        if (fmt === 1) {
-            if (!ttsHoverPos.zone) return "UTM: -.-"
-            var z = ttsHoverPos.zone.rawValue
-            if (z < 1 || z > 60) return "UTM: -.-"
-            return "UTM: " + z + (ttsHoverPos.hemisphere.rawValue ? "S" : "N") +
-                   "   " + ttsHoverPos.easting.rawValue.toFixed(0) + "E" +
-                   "   " + ttsHoverPos.northing.rawValue.toFixed(0) + "N"
-        }
-        if (fmt === 2) {
-            var s = ttsHoverPos.mgrs ? ttsHoverPos.mgrs.valueString : ""
-            return "MGRS: " + (s && s.length > 0 ? s : "-.-")
-        }
-        return "LAT: " + coord.latitude.toFixed(7) + "   LON: " + coord.longitude.toFixed(7)
-    }
     MapFitFunctions {
         id: mapFitFunctions  // The name for this id cannot be changed without breaking references outside of this code. Beware!
         map: editorMap
@@ -275,11 +254,6 @@ Item {
             allowGCSLocationCenter: true
             allowVehicleLocationCenter: true
             planView: true
-
-            // TTS: صيغة عرض الإحداثيات المشتركة لكل Plan View
-            //      0 = GEO   1 = UTM   2 = MGRS (نفس ترتيب EditPositionDialog الأصلي)
-            property int ttsCoordFormat: 0
-
             zoomLevel: QGroundControl.flightMapZoom
             center: QGroundControl.flightMapPosition
             // This is the center rectangle of the map which is not obscured by tools
@@ -479,28 +453,12 @@ Item {
             onPositionChanged: (mouse) => {
                 ttsCoordTracker._hoverCoord = editorMap.toCoordinate(Qt.point(mouse.x, mouse.y), false)
                 ttsCoordTracker._hoverAlt = null
-                // TTS: تعبئة Facts التحويل من مصدر التغيّر مباشرة
-                ttsHoverPos.initValues()
                 ttsTerrainDebounce.restart()
             }
             onExited: {
                 ttsCoordTracker._hoverCoord = null
                 ttsCoordTracker._hoverAlt = null
             }
-        }
-
-        // TTS: محوّل QGC الأصلي — كتابة coordinate تملأ zone/hemisphere/
-        //      easting/northing/mgrs تلقائياً عبر QGCGeo. لا حساب مستقل.
-        TransformPositionController {
-            id: ttsHoverPos
-            coordinate: ttsCoordTracker._hoverCoord ? ttsCoordTracker._hoverCoord : QtPositioning.coordinate()
-            // TTS: setCoordinate() تخزّن الإحداثي فقط — initValues() هي التي
-            //      تملأ zone/hemisphere/easting/northing/mgrs (مؤكد من
-            //      TransformPositionController.cc). ولأن الإشارة لا تُبعث عند
-            //      أول انتقال (invalid→valid) بسبب حارس wasInvalid، نستدعيها
-            //      من مصدر التغيّر نفسه أدناه بدل الاعتماد على الإشارة.
-            onCoordinateChanged: initValues()
-            Component.onCompleted: initValues()
         }
 
         Rectangle {
@@ -525,7 +483,8 @@ Item {
                 font.bold:       true
                 color:           "#0A0C0E"
                 text: ttsCoordTracker._hoverCoord
-                      ? _root.ttsFormatCoord(ttsCoordTracker._hoverCoord) +
+                      ? "LAT: " + ttsCoordTracker._hoverCoord.latitude.toFixed(7) +
+                        "   LON: " + ttsCoordTracker._hoverCoord.longitude.toFixed(7) +
                         "   ALT: " + (ttsCoordTracker._hoverAlt !== null
                                       ? QGroundControl.unitsConversion.metersToAppSettingsVerticalDistanceUnits(ttsCoordTracker._hoverAlt).toFixed(1) + " " + QGroundControl.unitsConversion.appSettingsVerticalDistanceUnitsString
                                       : "…")

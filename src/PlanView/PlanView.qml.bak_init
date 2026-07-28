@@ -479,8 +479,6 @@ Item {
             onPositionChanged: (mouse) => {
                 ttsCoordTracker._hoverCoord = editorMap.toCoordinate(Qt.point(mouse.x, mouse.y), false)
                 ttsCoordTracker._hoverAlt = null
-                // TTS: تعبئة Facts التحويل من مصدر التغيّر مباشرة
-                ttsHoverPos.initValues()
                 ttsTerrainDebounce.restart()
             }
             onExited: {
@@ -494,13 +492,6 @@ Item {
         TransformPositionController {
             id: ttsHoverPos
             coordinate: ttsCoordTracker._hoverCoord ? ttsCoordTracker._hoverCoord : QtPositioning.coordinate()
-            // TTS: setCoordinate() تخزّن الإحداثي فقط — initValues() هي التي
-            //      تملأ zone/hemisphere/easting/northing/mgrs (مؤكد من
-            //      TransformPositionController.cc). ولأن الإشارة لا تُبعث عند
-            //      أول انتقال (invalid→valid) بسبب حارس wasInvalid، نستدعيها
-            //      من مصدر التغيّر نفسه أدناه بدل الاعتماد على الإشارة.
-            onCoordinateChanged: initValues()
-            Component.onCompleted: initValues()
         }
 
         Rectangle {

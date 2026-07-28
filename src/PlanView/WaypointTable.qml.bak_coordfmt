@@ -60,37 +60,10 @@ Rectangle {
         return out
     }
     readonly property var _curItem: _mc ? _mc.currentPlanViewItem : null
-    // TTS: صيغة الإحداثيات المشتركة — تُقرأ من الخريطة الممرَّرة (map)
-    readonly property int _coordFmt: wpRoot.map && wpRoot.map.ttsCoordFormat !== undefined ? wpRoot.map.ttsCoordFormat : 0
-
     function _curFieldName(slotIndex) {
-        if (!_curItem || _curItem.specifiesCoordinate) {
-            if (wpRoot._coordFmt === 1) return slotIndex === 0 ? "EASTING" : "NORTHING"
-            if (wpRoot._coordFmt === 2) return slotIndex === 0 ? "MGRS" : ""
-            return slotIndex === 0 ? "LAT" : "LON"
-        }
+        if (!_curItem || _curItem.specifiesCoordinate) return slotIndex === 0 ? "LAT" : "LON"
         var facts = _dynamicFacts(_curItem)
         return facts[slotIndex] ? facts[slotIndex].name : ""
-    }
-
-    // TTS: تنسيق خلية إحداثي حسب الصيغة. ctl = TransformPositionController
-    //      خاص بالصف (يملأ نفسه تلقائياً من coordinate بدوال QGC).
-    function _fmtCoordSlot(ctl, coord, slot) {
-        if (!coord || !coord.isValid) return "-.-"
-        if (wpRoot._coordFmt === 1) {
-            if (!ctl.zone) return "-.-"
-            var z = ctl.zone.rawValue
-            if (z < 1 || z > 60) return "-.-"
-            return slot === 0
-                ? z + (ctl.hemisphere.rawValue ? "S" : "N") + " " + ctl.easting.rawValue.toFixed(0)
-                : ctl.northing.rawValue.toFixed(0)
-        }
-        if (wpRoot._coordFmt === 2) {
-            if (slot !== 0) return "\u2014"
-            var s = ctl.mgrs ? ctl.mgrs.valueString : ""
-            return (s && s.length > 0) ? s : "-.-"
-        }
-        return slot === 0 ? coord.latitude.toFixed(7) : coord.longitude.toFixed(7)
     }
     function _rowFieldFact(item, slotIndex) {
         if (!item || item.specifiesCoordinate) return null
@@ -508,30 +481,12 @@ Rectangle {
                             anchors.fill: parent
                             EditCell {
                                 width:     wpRoot.colLat
-                                editable:  wpRoot._coordFmt === 0 && (rowItem._item ? (rowItem._item.specifiesCoordinate || wpRoot._rowFieldFact(rowItem._item, 0) !== null) : false)
+                                editable:  rowItem._item ? (rowItem._item.specifiesCoordinate || wpRoot._rowFieldFact(rowItem._item, 0) !== null) : false
                                 textColor: rowItem._item && rowItem._item.specifiesCoordinate ? wpRoot.cWhite
                                          : (rowItem._item && wpRoot._rowFieldFact(rowItem._item, 0)) ? wpRoot.cOrange : wpRoot.cGrey
-
-                                // TTS: محوّل خاص بهذا الصف
-                                TransformPositionController {
-                                    id: latCtl
-                                    coordinate: (rowItem._item && rowItem._item.specifiesCoordinate && rowItem._item.coordinate)
-                                                ? rowItem._item.coordinate : QtPositioning.coordinate()
-                                    // TTS: initValues() هي التي تملأ الـ Facts فعلياً
-                                    onCoordinateChanged: initValues()
-                                    Component.onCompleted: initValues()
-                                }
-                                // TTS: الحارس wasInvalid يمنع الإشارة عند أول انتقال
-                                //      invalid→valid، فنراقب المصدر مباشرة
-                                Connections {
-                                    target: rowItem._item
-                                    ignoreUnknownSignals: true
-                                    function onCoordinateChanged() { latCtl.initValues() }
-                                }
-
                                 text: {
                                     if (!rowItem._item) return "0"
-                                    if (rowItem._item.specifiesCoordinate) return wpRoot._fmtCoordSlot(latCtl, rowItem._item.coordinate, 0)
+                                    if (rowItem._item.specifiesCoordinate) return rowItem._item.coordinate.latitude.toFixed(7)
                                     var f = wpRoot._rowFieldFact(rowItem._item, 0)
                                     return f ? f.rawValue.toString() : "—"
                                 }
@@ -546,30 +501,12 @@ Rectangle {
                             }
                             EditCell {
                                 width:     wpRoot.colLon
-                                editable:  wpRoot._coordFmt === 0 && (rowItem._item ? (rowItem._item.specifiesCoordinate || wpRoot._rowFieldFact(rowItem._item, 1) !== null) : false)
+                                editable:  rowItem._item ? (rowItem._item.specifiesCoordinate || wpRoot._rowFieldFact(rowItem._item, 1) !== null) : false
                                 textColor: rowItem._item && rowItem._item.specifiesCoordinate ? wpRoot.cWhite
                                          : (rowItem._item && wpRoot._rowFieldFact(rowItem._item, 1)) ? wpRoot.cOrange : wpRoot.cGrey
-
-                                // TTS: محوّل خاص بهذا الصف
-                                TransformPositionController {
-                                    id: lonCtl
-                                    coordinate: (rowItem._item && rowItem._item.specifiesCoordinate && rowItem._item.coordinate)
-                                                ? rowItem._item.coordinate : QtPositioning.coordinate()
-                                    // TTS: initValues() هي التي تملأ الـ Facts فعلياً
-                                    onCoordinateChanged: initValues()
-                                    Component.onCompleted: initValues()
-                                }
-                                // TTS: الحارس wasInvalid يمنع الإشارة عند أول انتقال
-                                //      invalid→valid، فنراقب المصدر مباشرة
-                                Connections {
-                                    target: rowItem._item
-                                    ignoreUnknownSignals: true
-                                    function onCoordinateChanged() { lonCtl.initValues() }
-                                }
-
                                 text: {
                                     if (!rowItem._item) return "0"
-                                    if (rowItem._item.specifiesCoordinate) return wpRoot._fmtCoordSlot(lonCtl, rowItem._item.coordinate, 1)
+                                    if (rowItem._item.specifiesCoordinate) return rowItem._item.coordinate.longitude.toFixed(7)
                                     var f = wpRoot._rowFieldFact(rowItem._item, 1)
                                     return f ? f.rawValue.toString() : "—"
                                 }

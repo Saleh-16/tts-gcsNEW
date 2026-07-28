@@ -19,39 +19,6 @@ Rectangle {
     property bool _allowFWVehicleTypeSelection: _noMissionItemsAdded && !globals.activeVehicle
     property bool _waypointsOnlyMode: QGroundControl.corePlugin.options.missionWaypointsOnly
     property real _fieldWidth: ScreenTools.defaultFontPixelWidth * 16
-
-    // ── TTS: صيغة عرض الإحداثيات المشتركة (من قسم Defaults عبر editorMap) ──
-    //    0 = GEO   1 = UTM   2 = MGRS
-    readonly property int _coordFmt: _root.editorMap && _root.editorMap.ttsCoordFormat !== undefined
-                                     ? _root.editorMap.ttsCoordFormat : 0
-
-    // TTS: محوّل QGC الأصلي — نفس الكلاس المستخدم في EditPositionDialog.
-    //      initValues() هي التي تملأ zone/hemisphere/easting/northing/mgrs
-    //      (setCoordinate تخزّن فقط — مؤكد من TransformPositionController.cc).
-    //      setFromUTM/setFromMGRS تعمل بالاتجاه العكسي (نص → إحداثي).
-    TransformPositionController {
-        id: homePos
-        coordinate: (_root._settingsItem && _root._settingsItem.coordinate.isValid)
-                    ? _root._settingsItem.coordinate : QtPositioning.coordinate()
-        onCoordinateChanged: initValues()
-        Component.onCompleted: initValues()
-    }
-
-    Connections {
-        target: _root._settingsItem
-        ignoreUnknownSignals: true
-        function onCoordinateChanged() { homePos.initValues() }
-    }
-
-    // TTS: كتابة الإحداثي المحوّل من UTM/MGRS إلى Home
-    function _applyHomeFromCtl() {
-        if (!_root._settingsItem) return
-        if (homePos.coordinate && homePos.coordinate.isValid) {
-            var alt = _root._settingsItem.coordinate.altitude
-            _root._settingsItem.coordinate = QtPositioning.coordinate(
-                homePos.coordinate.latitude, homePos.coordinate.longitude, alt)
-        }
-    }
     // ── Auto-set Home from GCS position (GPS) ──
     property var _gcsPos: QGroundControl.qgcPositionManger.gcsPosition
     Component.onCompleted: _tryAutoSetHome()
@@ -179,11 +146,9 @@ Rectangle {
             QGCLabel {
                 text: qsTr("Latitude")
                 font.pointSize: ScreenTools.smallFontPointSize
-                visible: _root._coordFmt === 0   // TTS
             }
             QGCTextField {
                 id: homeLatField
-                visible: _root._coordFmt === 0   // TTS
                 Layout.fillWidth: true
                 font.pointSize: ScreenTools.smallFontPointSize
                 text: _root._settingsItem && _root._settingsItem.coordinate.isValid
@@ -208,11 +173,9 @@ Rectangle {
             QGCLabel {
                 text: qsTr("Longitude")
                 font.pointSize: ScreenTools.smallFontPointSize
-                visible: _root._coordFmt === 0   // TTS
             }
             QGCTextField {
                 id: homeLonField
-                visible: _root._coordFmt === 0   // TTS
                 Layout.fillWidth: true
                 font.pointSize: ScreenTools.smallFontPointSize
                 text: _root._settingsItem && _root._settingsItem.coordinate.isValid
@@ -234,94 +197,6 @@ Rectangle {
                     }
                 }
             }
-            // ── TTS: حقول UTM (Zone / Easting / Northing) ───────────────
-            QGCLabel {
-                text: qsTr("Zone")
-                font.pointSize: ScreenTools.smallFontPointSize
-                visible: _root._coordFmt === 1
-            }
-            QGCTextField {
-                id: homeZoneField
-                visible: _root._coordFmt === 1
-                Layout.fillWidth: true
-                font.pointSize: ScreenTools.smallFontPointSize
-                text: homePos.zone ? homePos.zone.valueString : ""
-                onEditingFinished: {
-                    if (!homePos.zone) return
-                    var v = parseInt(text)
-                    if (!isNaN(v) && v >= 1 && v <= 60) {
-                        homePos.zone.rawValue = v
-                        homePos.setFromUTM()
-                        _root._applyHomeFromCtl()
-                    }
-                }
-            }
-
-            QGCLabel {
-                text: qsTr("Easting")
-                font.pointSize: ScreenTools.smallFontPointSize
-                visible: _root._coordFmt === 1
-            }
-            QGCTextField {
-                id: homeEastField
-                visible: _root._coordFmt === 1
-                Layout.fillWidth: true
-                font.pointSize: ScreenTools.smallFontPointSize
-                text: homePos.easting ? homePos.easting.valueString : ""
-                onEditingFinished: {
-                    if (!homePos.easting) return
-                    var v = parseFloat(text)
-                    if (!isNaN(v)) {
-                        homePos.easting.rawValue = v
-                        homePos.setFromUTM()
-                        _root._applyHomeFromCtl()
-                    }
-                }
-            }
-
-            QGCLabel {
-                text: qsTr("Northing")
-                font.pointSize: ScreenTools.smallFontPointSize
-                visible: _root._coordFmt === 1
-            }
-            QGCTextField {
-                id: homeNorthField
-                visible: _root._coordFmt === 1
-                Layout.fillWidth: true
-                font.pointSize: ScreenTools.smallFontPointSize
-                text: homePos.northing ? homePos.northing.valueString : ""
-                onEditingFinished: {
-                    if (!homePos.northing) return
-                    var v = parseFloat(text)
-                    if (!isNaN(v)) {
-                        homePos.northing.rawValue = v
-                        homePos.setFromUTM()
-                        _root._applyHomeFromCtl()
-                    }
-                }
-            }
-
-            // ── TTS: حقل MGRS ───────────────────────────────────────────
-            QGCLabel {
-                text: qsTr("MGRS")
-                font.pointSize: ScreenTools.smallFontPointSize
-                visible: _root._coordFmt === 2
-            }
-            QGCTextField {
-                id: homeMgrsField
-                visible: _root._coordFmt === 2
-                Layout.fillWidth: true
-                font.pointSize: ScreenTools.smallFontPointSize
-                text: homePos.mgrs ? homePos.mgrs.valueString : ""
-                onEditingFinished: {
-                    if (!homePos.mgrs) return
-                    homePos.mgrs.rawValue = text
-                    homePos.setFromMGRS()
-                    _root._applyHomeFromCtl()
-                }
-            }
-            // ── END TTS UTM/MGRS ────────────────────────────────────────
-
             // ── END TTS Lat/Lon ─────────────────────────────────────────
             QGCLabel {
                 text: qsTr("Altitude (AMSL)")
