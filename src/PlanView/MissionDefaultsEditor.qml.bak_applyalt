@@ -61,12 +61,7 @@ Rectangle {
 
     // TTS: استثناء Takeoff (command 22 = MAV_CMD_NAV_TAKEOFF) لأن ارتفاعه
     //      له معنى خاص (ارتفاع الإقلاع). غيّر لـ false لتضمينه.
-    readonly property bool _skipTakeoff: false
-
-    // TTS: يحفظ حقل الارتفاع قبل الحساب — يغني عن الضغط على Enter
-    function _commitAltField() {
-        return wpAltField.commit()
-    }
+    readonly property bool _skipTakeoff: true
 
     function _applyAltToAll() {
         _applyDone = 0
@@ -79,16 +74,7 @@ Rectangle {
             if (!item || !item.specifiesAltitude || !item.altitude) continue
             if (_root._skipTakeoff && item.command === 22) { _applySkipped++; continue }
             var terr = item.terrainAltitude
-            if (isNaN(terr)) {
-                console.log("TTS SKIP: index=" + i +
-                            " cmd=" + item.command +
-                            " name=" + (item.commandName ? item.commandName : "?") +
-                            " specifiesCoord=" + item.specifiesCoordinate +
-                            " coordValid=" + (item.coordinate ? item.coordinate.isValid : "noCoord") +
-                            " lat=" + (item.coordinate ? item.coordinate.latitude.toFixed(5) : "-") +
-                            " terrainFailed=" + item.terrainQueryFailed)
-                _applySkipped++; continue
-            }
+            if (isNaN(terr)) { _applySkipped++; continue }
             item.altitudeFrame = QGroundControl.AltitudeFrameAbsolute
             item.altitude.rawValue = terr + defAlt
             _applyDone++
@@ -166,19 +152,6 @@ Rectangle {
                 id: wpAltField
                 Layout.fillWidth: true
                 readonly property var _fact: QGroundControl.settingsManager.appSettings.defaultMissionItemAltitude
-
-                // TTS: أرقام عشرية موجبة فقط — يمنع إدخال نص غير صالح مثل "12="
-                validator: DoubleValidator { bottom: 0.0; decimals: 1; notation: DoubleValidator.StandardNotation }
-
-                // TTS: حفظ النص في الـ Fact. يُستدعى من onEditingFinished ومن الزر
-                //      قبل الحساب، فلا يحتاج المستخدم Enter.
-                function commit() {
-                    if (!wpAltField._fact) return false
-                    var v = parseFloat(wpAltField.text)
-                    if (isNaN(v)) return false
-                    wpAltField._fact.rawValue = QGroundControl.unitsConversion.appSettingsVerticalDistanceUnitsToMeters(v)
-                    return true
-                }
                 text: _fact ? QGroundControl.unitsConversion.metersToAppSettingsVerticalDistanceUnits(_fact.rawValue).toFixed(1) : ""
                 Connections {
                     target: wpAltField._fact
@@ -188,7 +161,14 @@ Rectangle {
                         }
                     }
                 }
-                onEditingFinished: wpAltField.commit()
+                onEditingFinished: {
+                    if (wpAltField._fact) {
+                        var v = parseFloat(text)
+                        if (!isNaN(v)) {
+                            wpAltField._fact.rawValue = QGroundControl.unitsConversion.appSettingsVerticalDistanceUnitsToMeters(v)
+                        }
+                    }
+                }
             }
             QGCLabel {
                 text: QGroundControl.unitsConversion.appSettingsVerticalDistanceUnitsString
@@ -225,15 +205,8 @@ Rectangle {
                 id: applyMa
                 anchors.fill: parent
                 hoverEnabled: true
-                // TTS: معطَّل لو النص غير صالح — يمنع الحساب بقيمة قديمة
                 enabled: _root._visualItems && _root._visualItems.count > 1
-                         && wpAltField.acceptableInput
-                onClicked: {
-                    // TTS: احفظ الحقل أولاً، ثم احسب — بلا حاجة لـ Enter
-                    if (_root._commitAltField()) {
-                        _root._applyAltToAll()
-                    }
-                }
+                onClicked: _root._applyAltToAll()
             }
         }
 

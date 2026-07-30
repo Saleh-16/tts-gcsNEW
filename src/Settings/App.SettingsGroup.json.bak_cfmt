@@ -120,17 +120,6 @@
             "keywords": "mission altitude,default altitude"
         },
         {
-            "name": "coordinateFormat",
-            "shortDesc": "Coordinate display format",
-            "longDesc": "Format used to display coordinates: Geographic (Lat/Lon), UTM, or MGRS.",
-            "type": "uint32",
-            "enumStrings": "Geographic,UTM,MGRS",
-            "enumValues": "0,1,2",
-            "default": 0,
-            "label": "Coordinate Format",
-            "keywords": "coordinate,format,mgrs,utm"
-        },
-        {
             "name": "audioMuted",
             "shortDesc": "Mute audio output",
             "longDesc": "Mutes all audio output without changing the volume level.",

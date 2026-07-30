@@ -22,7 +22,8 @@ Rectangle {
 
     // ── TTS: صيغة عرض الإحداثيات المشتركة (من قسم Defaults عبر editorMap) ──
     //    0 = GEO   1 = UTM   2 = MGRS
-    readonly property int _coordFmt: QGroundControl.settingsManager.appSettings.coordinateFormat.rawValue
+    readonly property int _coordFmt: _root.editorMap && _root.editorMap.ttsCoordFormat !== undefined
+                                     ? _root.editorMap.ttsCoordFormat : 0
 
     // TTS: محوّل QGC الأصلي — نفس الكلاس المستخدم في EditPositionDialog.
     //      initValues() هي التي تملأ zone/hemisphere/easting/northing/mgrs

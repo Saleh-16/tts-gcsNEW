@@ -61,7 +61,7 @@ Rectangle {
     }
     readonly property var _curItem: _mc ? _mc.currentPlanViewItem : null
     // TTS: صيغة الإحداثيات المشتركة — تُقرأ من الخريطة الممرَّرة (map)
-    readonly property int _coordFmt: QGroundControl.settingsManager.appSettings.coordinateFormat.rawValue
+    readonly property int _coordFmt: wpRoot.map && wpRoot.map.ttsCoordFormat !== undefined ? wpRoot.map.ttsCoordFormat : 0
 
     function _curFieldName(slotIndex) {
         if (!_curItem || _curItem.specifiesCoordinate) {

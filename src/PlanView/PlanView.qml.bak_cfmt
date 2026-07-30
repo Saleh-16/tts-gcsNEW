@@ -62,7 +62,7 @@ Item {
     //      (QGCGeo::convertGeoToUTM / convertGeoToMGRS) — بدون أي حساب مستقل.
     function ttsFormatCoord(coord) {
         if (!coord || !coord.isValid) return ""
-        var fmt = QGroundControl.settingsManager.appSettings.coordinateFormat.rawValue
+        var fmt = editorMap.ttsCoordFormat
         if (fmt === 1) {
             if (!ttsHoverPos.zone) return "UTM: -.-"
             var z = ttsHoverPos.zone.rawValue
@@ -276,6 +276,9 @@ Item {
             allowVehicleLocationCenter: true
             planView: true
 
+            // TTS: صيغة عرض الإحداثيات المشتركة لكل Plan View
+            //      0 = GEO   1 = UTM   2 = MGRS (نفس ترتيب EditPositionDialog الأصلي)
+            property int ttsCoordFormat: 0
 
             zoomLevel: QGroundControl.flightMapZoom
             center: QGroundControl.flightMapPosition

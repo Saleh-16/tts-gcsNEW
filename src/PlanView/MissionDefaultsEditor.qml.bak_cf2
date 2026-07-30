@@ -50,58 +50,6 @@ Rectangle {
         }
     }
     // ── END NEW ─────────────────────────────────────────────────────────
-    // ── TTS: إعادة حساب ارتفاع كل النقاط = terrain + Waypoints Altitude ──
-    //     terrainAltitude خاصية جاهزة على VisualMissionItem (مؤكدة من
-    //     VisualMissionItem.h:46) — يحسبها QGC تلقائياً، فلا حاجة لاستعلام
-    //     غير متزامن. تكون NaN إذا لم تُحمّل التضاريس بعد، فنتخطاها.
-    //     التعديلات اليدوية على الارتفاعات تُمسح — هذا سلوك مقصود.
-    property int _applyDone:    0
-    property int _applySkipped: 0
-    property bool _applyRan:    false
-
-    // TTS: استثناء Takeoff (command 22 = MAV_CMD_NAV_TAKEOFF) لأن ارتفاعه
-    //      له معنى خاص (ارتفاع الإقلاع). غيّر لـ false لتضمينه.
-    readonly property bool _skipTakeoff: false
-
-    // TTS: يحفظ حقل الارتفاع قبل الحساب — يغني عن الضغط على Enter
-    function _commitAltField() {
-        return wpAltField.commit()
-    }
-
-    function _applyAltToAll() {
-        _applyDone = 0
-        _applySkipped = 0
-        _applyRan = true
-        if (!_root._visualItems) return
-        var defAlt = QGroundControl.settingsManager.appSettings.defaultMissionItemAltitude.rawValue
-        for (var i = 1; i < _root._visualItems.count; i++) {
-            var item = _root._visualItems.get(i)
-            if (!item || !item.specifiesAltitude || !item.altitude) continue
-            if (_root._skipTakeoff && item.command === 22) { _applySkipped++; continue }
-            var terr = item.terrainAltitude
-            if (isNaN(terr)) {
-                console.log("TTS SKIP: index=" + i +
-                            " cmd=" + item.command +
-                            " name=" + (item.commandName ? item.commandName : "?") +
-                            " specifiesCoord=" + item.specifiesCoordinate +
-                            " coordValid=" + (item.coordinate ? item.coordinate.isValid : "noCoord") +
-                            " lat=" + (item.coordinate ? item.coordinate.latitude.toFixed(5) : "-") +
-                            " terrainFailed=" + item.terrainQueryFailed)
-                _applySkipped++; continue
-            }
-            item.altitudeFrame = QGroundControl.AltitudeFrameAbsolute
-            item.altitude.rawValue = terr + defAlt
-            _applyDone++
-        }
-        applyResetTimer.restart()
-    }
-
-    Timer {
-        id: applyResetTimer
-        interval: 3000
-        onTriggered: _root._applyRan = false
-    }
-
     Component { id: altFrameDialogComponent; AltFrameDialog { } }
     QGCPopupDialogFactory {
         id: altFrameDialogFactory
@@ -166,19 +114,6 @@ Rectangle {
                 id: wpAltField
                 Layout.fillWidth: true
                 readonly property var _fact: QGroundControl.settingsManager.appSettings.defaultMissionItemAltitude
-
-                // TTS: أرقام عشرية موجبة فقط — يمنع إدخال نص غير صالح مثل "12="
-                validator: DoubleValidator { bottom: 0.0; decimals: 1; notation: DoubleValidator.StandardNotation }
-
-                // TTS: حفظ النص في الـ Fact. يُستدعى من onEditingFinished ومن الزر
-                //      قبل الحساب، فلا يحتاج المستخدم Enter.
-                function commit() {
-                    if (!wpAltField._fact) return false
-                    var v = parseFloat(wpAltField.text)
-                    if (isNaN(v)) return false
-                    wpAltField._fact.rawValue = QGroundControl.unitsConversion.appSettingsVerticalDistanceUnitsToMeters(v)
-                    return true
-                }
                 text: _fact ? QGroundControl.unitsConversion.metersToAppSettingsVerticalDistanceUnits(_fact.rawValue).toFixed(1) : ""
                 Connections {
                     target: wpAltField._fact
@@ -188,52 +123,17 @@ Rectangle {
                         }
                     }
                 }
-                onEditingFinished: wpAltField.commit()
+                onEditingFinished: {
+                    if (wpAltField._fact) {
+                        var v = parseFloat(text)
+                        if (!isNaN(v)) {
+                            wpAltField._fact.rawValue = QGroundControl.unitsConversion.appSettingsVerticalDistanceUnitsToMeters(v)
+                        }
+                    }
+                }
             }
             QGCLabel {
                 text: QGroundControl.unitsConversion.appSettingsVerticalDistanceUnitsString
-            }
-        }
-
-        // ── TTS: زر إعادة حساب ارتفاع كل النقاط ──────────────────────────
-        //     يعيد حساب: terrain عند كل نقطة + قيمة Waypoints Altitude أعلاه.
-        Rectangle {
-            Layout.fillWidth: true
-            height: ScreenTools.defaultFontPixelHeight * 2.0
-            radius: ScreenTools.defaultFontPixelWidth * 0.4
-            color: applyMa.pressed ? Qt.rgba(0, 1, 0.53, 0.25)
-                 : applyMa.containsMouse ? Qt.rgba(0, 1, 0.53, 0.10) : "transparent"
-            border.color: _root._applyRan ? "#00FF88" : qgcPal.colorGreen
-            border.width: 1.5
-            opacity: (_root._visualItems && _root._visualItems.count > 1) ? 1.0 : 0.35
-            Behavior on color { ColorAnimation { duration: 120 } }
-
-            QGCLabel {
-                anchors.centerIn: parent
-                font.pointSize: ScreenTools.defaultFontPointSize
-                font.bold: true
-                color: qgcPal.colorGreen
-                text: {
-                    if (!_root._applyRan) return qsTr("Apply Altitude to All Waypoints")
-                    if (_root._applySkipped > 0)
-                        return "\u2713 " + _root._applyDone + qsTr(" updated, ") + _root._applySkipped + qsTr(" skipped")
-                    return "\u2713 " + _root._applyDone + qsTr(" waypoints updated")
-                }
-            }
-
-            MouseArea {
-                id: applyMa
-                anchors.fill: parent
-                hoverEnabled: true
-                // TTS: معطَّل لو النص غير صالح — يمنع الحساب بقيمة قديمة
-                enabled: _root._visualItems && _root._visualItems.count > 1
-                         && wpAltField.acceptableInput
-                onClicked: {
-                    // TTS: احفظ الحقل أولاً، ثم احسب — بلا حاجة لـ Enter
-                    if (_root._commitAltField()) {
-                        _root._applyAltToAll()
-                    }
-                }
             }
         }
 
@@ -242,6 +142,7 @@ Rectangle {
         //     الجدول السفلي. التحويل بدوال QGC الأصلية (QGCGeo).
         RowLayout {
             Layout.fillWidth: true
+            visible: _root.editorMap !== null
             spacing: ScreenTools.defaultFontPixelWidth * 0.5
 
             QGCLabel { text: qsTr("Coordinate Format") }
@@ -249,9 +150,10 @@ Rectangle {
             QGCComboBox {
                 Layout.fillWidth: true
                 model: [ qsTr("Geographic"), qsTr("UTM"), qsTr("MGRS") ]
-                readonly property var _fmtFact: QGroundControl.settingsManager.appSettings.coordinateFormat
-                currentIndex: _fmtFact ? _fmtFact.rawValue : 0
-                onActivated: (index) => { if (_fmtFact) _fmtFact.rawValue = index }
+                currentIndex: _root.editorMap ? _root.editorMap.ttsCoordFormat : 0
+                onActivated: (index) => {
+                    if (_root.editorMap) _root.editorMap.ttsCoordFormat = index
+                }
             }
         }
         // ── TTS: قسم Flight Speed محذوف بطلب صريح — الكود القديم معلّق ──────

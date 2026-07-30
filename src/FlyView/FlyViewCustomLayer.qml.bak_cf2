@@ -1,6 +1,5 @@
 import QtQuick
 import QtQuick.Layouts
-import QtPositioning
 import QGroundControl
 import QGroundControl.Controls
 // ============================================================================
@@ -47,29 +46,6 @@ Item {
     // ── Unit scale: every size below is "_u * factor" instead of a raw pixel,
     //     so the whole UI adapts to any screen size / DPI / user font setting ─
     readonly property real _u: ScreenTools.defaultFontPixelWidth
-
-    // ── TTS: صيغة عرض الإحداثيات — نفس إعداد Plan View (Fact محفوظ) ──────
-    //     0 = GEO   1 = UTM   2 = MGRS
-    readonly property int _coordFmt: QGroundControl.settingsManager.appSettings.coordinateFormat.rawValue
-
-    // TTS: تنسيق إحداثي. ctl = TransformPositionController خاص بالصف
-    //      (setCoordinate تخزّن فقط — initValues() هي التي تملأ الـ Facts).
-    function _fmtCoord(ctl, coord) {
-        if (!coord || !coord.isValid) return "--"
-        if (root._coordFmt === 1) {
-            if (!ctl || !ctl.zone) return "--"
-            var z = ctl.zone.rawValue
-            if (z < 1 || z > 60) return "--"
-            return z + (ctl.hemisphere.rawValue ? "S" : "N") + "  " +
-                   ctl.easting.rawValue.toFixed(0) + "E  " +
-                   ctl.northing.rawValue.toFixed(0) + "N"
-        }
-        if (root._coordFmt === 2) {
-            var s = (ctl && ctl.mgrs) ? ctl.mgrs.valueString : ""
-            return (s && s.length > 0) ? s : "--"
-        }
-        return coord.latitude.toFixed(6) + " N  " + coord.longitude.toFixed(6) + " E"
-    }
     // ── Layout heights: use ratios of window height (not _u) because these
     //     split a fixed vertical area; _u-based values could overflow on
     //     short windows ────────────────────────────────────────────────────
@@ -923,23 +899,8 @@ Item {
                                         }
                                         Text {
                                             width: tableHeader.cCoord; height: parent.height; verticalAlignment: Text.AlignVCenter
-
-                                            // TTS: محوّل QGC مستقل لهذا الصف
-                                            TransformPositionController {
-                                                id: rowCtl
-                                                coordinate: (rowRoot._mi && rowRoot._mi.coordinate && rowRoot._mi.coordinate.isValid)
-                                                            ? rowRoot._mi.coordinate : QtPositioning.coordinate()
-                                                onCoordinateChanged: initValues()
-                                                Component.onCompleted: initValues()
-                                            }
-                                            Connections {
-                                                target: rowRoot._mi
-                                                ignoreUnknownSignals: true
-                                                function onCoordinateChanged() { rowCtl.initValues() }
-                                            }
-
                                             text: rowRoot._mi && rowRoot._mi.coordinate !== undefined
-                                                  ? root._fmtCoord(rowCtl, rowRoot._mi.coordinate)
+                                                  ? rowRoot._mi.coordinate.latitude.toFixed(6) + " N  " + rowRoot._mi.coordinate.longitude.toFixed(6) + " E"
                                                   : "--"
                                             font.pixelSize: root._u * 1.2; font.family: "monospace"; color: root.cWhite
                                             elide: Text.ElideRight
