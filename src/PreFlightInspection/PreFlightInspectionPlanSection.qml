@@ -1079,7 +1079,7 @@ Column {
                             // reading it back.
                             Timer {
                                 id:          readbackTimer
-                                interval:    800
+                                interval:    1000
                                 repeat:      false
                                 onTriggered: wizard.checkReadback()
                             }

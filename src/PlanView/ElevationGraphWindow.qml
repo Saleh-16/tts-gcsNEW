@@ -55,10 +55,12 @@ Window {
     /// stray click.
     readonly property real _minDragPixels: 10
 
-    /// Smallest distance span the view may be zoomed to, in the horizontal
-    /// distance unit currently in use. Prevents zooming into a meaningless
-    /// sliver where the axis labels would all collapse onto one value.
-    readonly property real _minZoomSpan: 1
+    /// Smallest distance span the view may be zoomed to. Expressed as a
+    /// fraction of the full mission length rather than a fixed number, because
+    /// a floor that is sensible on a 400 m mission is meaningless on a 40 km
+    /// one: zooming to a couple of metres there lands between terrain samples
+    /// and shows two flat lines with no detail at all.
+    readonly property real _minZoomSpan: Math.max(1, (_fullMaxX - _fullMinX) * 0.002)
 
     ColumnLayout {
         anchors.fill:    parent

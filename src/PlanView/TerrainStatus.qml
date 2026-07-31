@@ -193,6 +193,44 @@ Rectangle {
         _autoMaxY = acc.max + pad
     }
 
+    /// Maps a mission distance (raw metres, as reported by
+    /// VisualMissionItem.distanceFromStart) to an x pixel position inside the
+    /// plot area, using the chart's own X axis range.
+    ///
+    /// The markers used to be positioned with terrainProfile.pixelsPerMeter,
+    /// but that is computed in C++ as visibleWidth / missionTotalDistance
+    /// (TerrainProfile.cc), i.e. against the WHOLE mission - it knows nothing
+    /// about axisX. So while the series honoured a zoomed axis range, the
+    /// markers stayed frozen at their full-mission positions and no longer
+    /// lined up with the plotted lines.
+    ///
+    /// The horizontalScale multiply matches what TerrainProfile.cc does when
+    /// it builds the series points, so marker x and series x live in the same
+    /// unit space even when the user displays distances in feet.
+    function _xForDistance(distanceMeters) {
+        if (!chart || !chart.axisX) {
+            return 0
+        }
+        var lo = chart.axisX.min
+        var hi = chart.axisX.max
+        if (!(hi > lo)) {
+            return 0
+        }
+        var scaled = distanceMeters * terrainProfile.horizontalScale
+        return chart.plotArea.width * ((scaled - lo) / (hi - lo))
+    }
+
+    /// True when the given mission distance falls inside the visible X range,
+    /// so markers outside a zoomed view are hidden instead of being clamped
+    /// against the edges where they would misrepresent their real position.
+    function _distanceInView(distanceMeters) {
+        if (!chart || !chart.axisX) {
+            return false
+        }
+        var scaled = distanceMeters * terrainProfile.horizontalScale
+        return scaled >= chart.axisX.min && scaled <= chart.axisX.max
+    }
+
     QGCPalette { id: qgcPal }
 
     QGCLabel {
@@ -343,8 +381,9 @@ Rectangle {
                             height:     terrainProfile.height
                             width:      1
                             color:      qgcPal.text
-                            x:          (object.distanceFromStart * terrainProfile.pixelsPerMeter)
-                            visible:    object.isSimpleItem || object.isSingleItem
+                            x:          root._xForDistance(object.distanceFromStart)
+                            visible:    (object.isSimpleItem || object.isSingleItem) &&
+                                        root._distanceInView(object.distanceFromStart)
 
                             MissionItemIndexLabel {
                                 anchors.horizontalCenter:   parent.horizontalCenter
@@ -362,8 +401,9 @@ Rectangle {
                             height:     terrainProfile.height
                             width:      1
                             color:      qgcPal.text
-                            x:          (object.distanceFromStart * terrainProfile.pixelsPerMeter)
-                            visible:    complexItem.visible
+                            x:          root._xForDistance(object.distanceFromStart)
+                            visible:    complexItem.visible &&
+                                        root._distanceInView(object.distanceFromStart)
 
                             MissionItemIndexLabel {
                                 anchors.horizontalCenter:   parent.horizontalCenter
@@ -380,8 +420,9 @@ Rectangle {
                             height:     terrainProfile.height
                             width:      1
                             color:      qgcPal.text
-                            x:          ((object.distanceFromStart + object.complexDistance) * terrainProfile.pixelsPerMeter)
-                            visible:    complexItem.visible
+                            x:          root._xForDistance(object.distanceFromStart + object.complexDistance)
+                            visible:    complexItem.visible &&
+                                        root._distanceInView(object.distanceFromStart + object.complexDistance)
 
                             MissionItemIndexLabel {
                                 anchors.horizontalCenter:   parent.horizontalCenter
@@ -396,8 +437,11 @@ Rectangle {
                         Rectangle {
                             id:             complexItem
                             anchors.bottom: parent.bottom
-                            x:              (object.distanceFromStart * terrainProfile.pixelsPerMeter)
-                            width:          complexItem.visible ? object.complexDistance * terrainProfile.pixelsPerMeter : 0
+                            x:              root._xForDistance(object.distanceFromStart)
+                            width:          complexItem.visible
+                                                ? Math.max(0, root._xForDistance(object.distanceFromStart + object.complexDistance)
+                                                              - root._xForDistance(object.distanceFromStart))
+                                                : 0
                             height:         patternNameLabel.height
                             color:          "green"
                             opacity:        0.5
