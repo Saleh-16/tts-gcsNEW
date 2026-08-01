@@ -80,7 +80,7 @@ Item {
             Column {
                 anchors.centerIn: parent; spacing: control._u * 0.15
                 Text { text:"TTS GROUP"; font.pixelSize: control._u * 1.5; font.bold:true; font.letterSpacing: control._u * 0.15; color:control.cWhite; horizontalAlignment: Text.AlignHCenter }
-                Text { text:"v2.2  ";  font.pixelSize: control._u * 1.05; font.letterSpacing: control._u * 0.08; font.family:"monospace"; color:control.cNeon; horizontalAlignment: Text.AlignHCenter }
+                Text { text:"v2.3  ";  font.pixelSize: control._u * 1.05; font.letterSpacing: control._u * 0.08; font.family:"monospace"; color:control.cNeon; horizontalAlignment: Text.AlignHCenter }
             }
         }
         Rectangle { Layout.preferredWidth:1; Layout.fillHeight:true; Layout.topMargin: control._u * 1; Layout.bottomMargin: control._u * 1; color:control.cBorder }

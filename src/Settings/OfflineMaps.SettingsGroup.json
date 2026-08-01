@@ -24,7 +24,7 @@
             "name": "maxTilesForDownload",
             "shortDesc": "Maximum number of tiles for download.",
             "type": "Uint32",
-            "default": 100000,
+            "default": 10000000,
             "label": "Maximum number of tiles for download."
         }
     ]
