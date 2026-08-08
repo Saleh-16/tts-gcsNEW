@@ -9,8 +9,6 @@ Rectangle {
     id: _root
     required property var missionController
     required property var planMasterController
-
-    // TTS: مرجع الخريطة — يحمل ttsCoordFormat المشترك مع الجدول وصندوق الماوس
     property var editorMap: null
     property var _controllerVehicle: planMasterController.controllerVehicle
     property var _visualItems: missionController.visualItems
@@ -34,12 +32,6 @@ Rectangle {
             }
         }
     }
-    // ── NEW: Default the mission's altitude frame to AMSL the moment
-    //         this panel first loads, and normalize any existing items
-    //         to match. The operator can still change it afterward via
-    //         the "Alt Frame" button below — this only sets the initial
-    //         default, per the project's standing AMSL-by-default
-    //         decision. ────────────────────────────────────────────────
     Component.onCompleted: {
         _root.missionController.globalAltitudeFrame = QGroundControl.AltitudeFrameAMSL
         for (var i = 1; i < _root._visualItems.count; i++) {
@@ -49,29 +41,32 @@ Rectangle {
             }
         }
     }
-    // ── END NEW ─────────────────────────────────────────────────────────
-    // ── TTS: إعادة حساب ارتفاع كل النقاط = terrain + Waypoints Altitude ──
-    //     terrainAltitude خاصية جاهزة على VisualMissionItem (مؤكدة من
-    //     VisualMissionItem.h:46) — يحسبها QGC تلقائياً، فلا حاجة لاستعلام
-    //     غير متزامن. تكون NaN إذا لم تُحمّل التضاريس بعد، فنتخطاها.
-    //     التعديلات اليدوية على الارتفاعات تُمسح — هذا سلوك مقصود.
-    property int _applyDone:    0
-    property int _applySkipped: 0
-    property bool _applyRan:    false
-
-    // TTS: استثناء Takeoff (command 22 = MAV_CMD_NAV_TAKEOFF) لأن ارتفاعه
-    //      له معنى خاص (ارتفاع الإقلاع). غيّر لـ false لتضمينه.
+    property int  _applyDone:    0
+    property int  _applySkipped: 0
+    property bool _applyRan:     false
     readonly property bool _skipTakeoff: false
 
-    // TTS: يحفظ حقل الارتفاع قبل الحساب — يغني عن الضغط على Enter
-    function _commitAltField() {
-        return wpAltField.commit()
+    // ── TTS: ETA state ────────────────────────────────────────────────────
+    property string _etaResult:   "--:--:--"
+    property string _etaDistance: "–"
+    property bool   _etaReady:    false
+    // TTS: السرعة الخام (m/s) — تُقرأ من PlanView عبر rightPanel لتمريرها للـ WaypointTable
+    property real  missionSpeedMS: 0
+
+    // تحديث تلقائي عند تغير المسافة الكلية (إضافة/حذف نقطة)
+    Connections {
+        target: _root.missionController
+        function onMissionTotalDistanceChanged() {
+            if (_root._etaReady) {
+                _root._calculateETA()
+            }
+        }
     }
 
+    function _commitAltField() { return wpAltField.commit() }
+
     function _applyAltToAll() {
-        _applyDone = 0
-        _applySkipped = 0
-        _applyRan = true
+        _applyDone = 0; _applySkipped = 0; _applyRan = true
         if (!_root._visualItems) return
         var defAlt = QGroundControl.settingsManager.appSettings.defaultMissionItemAltitude.rawValue
         for (var i = 1; i < _root._visualItems.count; i++) {
@@ -79,16 +74,7 @@ Rectangle {
             if (!item || !item.specifiesAltitude || !item.altitude) continue
             if (_root._skipTakeoff && item.command === 22) { _applySkipped++; continue }
             var terr = item.terrainAltitude
-            if (isNaN(terr)) {
-                console.log("TTS SKIP: index=" + i +
-                            " cmd=" + item.command +
-                            " name=" + (item.commandName ? item.commandName : "?") +
-                            " specifiesCoord=" + item.specifiesCoordinate +
-                            " coordValid=" + (item.coordinate ? item.coordinate.isValid : "noCoord") +
-                            " lat=" + (item.coordinate ? item.coordinate.latitude.toFixed(5) : "-") +
-                            " terrainFailed=" + item.terrainQueryFailed)
-                _applySkipped++; continue
-            }
+            if (isNaN(terr)) { _applySkipped++; continue }
             item.altitudeFrame = QGroundControl.AltitudeFrameAbsolute
             item.altitude.rawValue = terr + defAlt
             _applyDone++
@@ -96,17 +82,50 @@ Rectangle {
         applyResetTimer.restart()
     }
 
-    Timer {
-        id: applyResetTimer
-        interval: 3000
-        onTriggered: _root._applyRan = false
+    function _calculateETA() {
+        var v = parseFloat(ttsMissionSpeedField.text)
+        if (isNaN(v) || v <= 0) {
+            _root._etaResult   = "--:--:--"
+            _root._etaDistance = "–"
+            _root._etaReady    = false
+            return
+        }
+        // تحويل وحدة العرض → m/s (اسم الدالة مؤكد من QmlUnitsConversion.h:56)
+        var speedMS = QGroundControl.unitsConversion.appSettingsSpeedUnitsToMetersSecond(v) * 1.0
+        var distM   = _root.missionController.missionTotalDistance
+        console.log("TTS ETA DEBUG: v=" + v + " speedMS=" + speedMS + " distM=" + distM)
+        if (distM <= 0 || speedMS <= 0) {
+            _root._etaResult   = "--:--:--"
+            _root._etaDistance = "–"
+            _root._etaReady    = false
+            return
+        }
+        // المسافة بوحدة العرض
+        var d = QGroundControl.unitsConversion.metersToAppSettingsHorizontalDistanceUnits(distM)
+        var u = QGroundControl.unitsConversion.appSettingsHorizontalDistanceUnitsString
+        _root._etaDistance = d.toFixed(0) + " " + u
+        // ETA
+        var s   = Math.floor(distM / speedMS)
+        var h   = Math.floor(s / 3600)
+        var m   = Math.floor((s % 3600) / 60)
+        var sec = s % 60
+        _root._etaResult = h.toString().padStart(2,"0") + ":" +
+                           m.toString().padStart(2,"0") + ":" +
+                           sec.toString().padStart(2,"0")
+        _root._etaReady = true
+        _root.missionSpeedMS = speedMS
+        // TTS: حفظ السرعة في AppSettings حتى تقرأها WaypointTable مباشرة
+        // offlineEditingCruiseSpeed — Fact جاهز (m/s خام) — مؤكد من AppSettings.h
+        QGroundControl.settingsManager.appSettings.offlineEditingCruiseSpeed.rawValue = speedMS
+        // TTS: نحفظ السرعة في offlineEditingCruiseSpeed (m/s خام) حتى تقرأها
+        // WaypointTable مباشرة بدون تمرير عبر rightPanel — قاعدة المشروع رقم 5
+        QGroundControl.settingsManager.appSettings.offlineEditingCruiseSpeed.rawValue = speedMS
     }
 
+    Timer { id: applyResetTimer; interval: 3000; onTriggered: _root._applyRan = false }
     Component { id: altFrameDialogComponent; AltFrameDialog { } }
-    QGCPopupDialogFactory {
-        id: altFrameDialogFactory
-        dialogComponent: altFrameDialogComponent
-    }
+    QGCPopupDialogFactory { id: altFrameDialogFactory; dialogComponent: altFrameDialogComponent }
+
     ColumnLayout {
         id: mainColumn
         anchors.left: parent.left
@@ -114,64 +133,40 @@ Rectangle {
         anchors.verticalCenter: parent.verticalCenter
         anchors.margins: ScreenTools.defaultFontPixelWidth
         spacing: ScreenTools.defaultFontPixelHeight * 0.5
+
+        // ── Alt Frame ─────────────────────────────────────────────────────
         LabelledButton {
             Layout.fillWidth: true
             label: qsTr("Alt Frame")
             buttonText: QGroundControl.altitudeFrameExtraUnits(_root.missionController.globalAltitudeFrame)
             onClicked: {
-                // سلوك Mission Planner بالضبط: تبديل الفريم فقط، بدون أي تحويل للأرقام.
-                // الرقم اللي كاتبه المستخدم يبقى كما هو - عليه هو يحسب القيمة الصحيحة يدويًا
-                // قبل ما يبدّل الإطار، تمامًا زي ما يصير بـ Mission Planner.
                 let removeModes = []
-                if (!_root._controllerVehicle.supports.terrainFrame) {
+                if (!_root._controllerVehicle.supports.terrainFrame)
                     removeModes.push(QGroundControl.AltitudeFrameTerrain)
-                }
                 let updateFunction = function(altFrame) {
                     _root.missionController.globalAltitudeFrame = altFrame
-                    if (altFrame === QGroundControl.AltitudeFrameMixed) {
-                        return
-                    }
-                    // ينطبق على كل النقاط (بما فيها Takeoff) - بدون تحويل الرقم
+                    if (altFrame === QGroundControl.AltitudeFrameMixed) return
                     for (var i = 1; i < _root._visualItems.count; i++) {
                         var item = _root._visualItems.get(i)
-                        if (!item || item.altitudeFrame === undefined) {
-                            continue
-                        }
+                        if (!item || item.altitudeFrame === undefined) continue
                         item.altitudeFrame = altFrame
                     }
                 }
                 altFrameDialogFactory.open({ currentAltFrame: _root.missionController.globalAltitudeFrame,
-                                             rgRemoveModes:   removeModes,
-                                             updateAltFrameFn: updateFunction })
+                                             rgRemoveModes: removeModes, updateAltFrameFn: updateFunction })
             }
         }
-        // TTS (24 يوليو 2026): FactTextFieldSlider محذوف بطلب صريح — كان يعاني
-        // نفس مشكلة الوحدة الغلط (Horizontal بدل Vertical)، وrawMin()/rawMax()
-        // اللازمة لبناء سلايدر صحيح غير متاحة من QML (لا Q_INVOKABLE ولا
-        // Q_PROPERTY، مؤكد بالـ grep من Fact.h). استبدلناه بحقل كتابة بس،
-        // بنفس التحويل اليدوي المؤكد المستخدم بجدول Waypoints وHome Position.
-        // الكود القديم معلّق:
-        // FactTextFieldSlider {
-        //     Layout.fillWidth: true
-        //     label: qsTr("Waypoints Altitude")
-        //     fact: QGroundControl.settingsManager.appSettings.defaultMissionItemAltitude
-        // }
+
+        // ── Waypoints Altitude ────────────────────────────────────────────
         RowLayout {
             Layout.fillWidth: true
             spacing: ScreenTools.defaultFontPixelWidth * 0.5
-            QGCLabel {
-                text: qsTr("Waypoints Altitude")
-            }
+            QGCLabel { text: qsTr("Waypoints Altitude") }
             QGCTextField {
                 id: wpAltField
                 Layout.fillWidth: true
                 readonly property var _fact: QGroundControl.settingsManager.appSettings.defaultMissionItemAltitude
-
-                // TTS: أرقام عشرية موجبة فقط — يمنع إدخال نص غير صالح مثل "12="
                 validator: DoubleValidator { bottom: 0.0; decimals: 1; notation: DoubleValidator.StandardNotation }
-
-                // TTS: حفظ النص في الـ Fact. يُستدعى من onEditingFinished ومن الزر
-                //      قبل الحساب، فلا يحتاج المستخدم Enter.
                 function commit() {
                     if (!wpAltField._fact) return false
                     var v = parseFloat(wpAltField.text)
@@ -183,69 +178,46 @@ Rectangle {
                 Connections {
                     target: wpAltField._fact
                     function onRawValueChanged() {
-                        if (!wpAltField.activeFocus && wpAltField._fact) {
+                        if (!wpAltField.activeFocus && wpAltField._fact)
                             wpAltField.text = QGroundControl.unitsConversion.metersToAppSettingsVerticalDistanceUnits(wpAltField._fact.rawValue).toFixed(1)
-                        }
                     }
                 }
                 onEditingFinished: wpAltField.commit()
             }
-            QGCLabel {
-                text: QGroundControl.unitsConversion.appSettingsVerticalDistanceUnitsString
-            }
+            QGCLabel { text: QGroundControl.unitsConversion.appSettingsVerticalDistanceUnitsString }
         }
 
-        // ── TTS: زر إعادة حساب ارتفاع كل النقاط ──────────────────────────
-        //     يعيد حساب: terrain عند كل نقطة + قيمة Waypoints Altitude أعلاه.
+        // ── زر Apply Altitude ─────────────────────────────────────────────
         Rectangle {
             Layout.fillWidth: true
             height: ScreenTools.defaultFontPixelHeight * 2.0
             radius: ScreenTools.defaultFontPixelWidth * 0.4
-            color: applyMa.pressed ? Qt.rgba(0, 1, 0.53, 0.25)
-                 : applyMa.containsMouse ? Qt.rgba(0, 1, 0.53, 0.10) : "transparent"
+            color: applyMa.pressed ? Qt.rgba(0,1,0.53,0.25) : applyMa.containsMouse ? Qt.rgba(0,1,0.53,0.10) : "transparent"
             border.color: _root._applyRan ? "#00FF88" : qgcPal.colorGreen
             border.width: 1.5
             opacity: (_root._visualItems && _root._visualItems.count > 1) ? 1.0 : 0.35
             Behavior on color { ColorAnimation { duration: 120 } }
-
             QGCLabel {
                 anchors.centerIn: parent
-                font.pointSize: ScreenTools.defaultFontPointSize
-                font.bold: true
-                color: qgcPal.colorGreen
+                font.pointSize: ScreenTools.defaultFontPointSize; font.bold: true; color: qgcPal.colorGreen
                 text: {
                     if (!_root._applyRan) return qsTr("Apply Altitude to All Waypoints")
-                    if (_root._applySkipped > 0)
-                        return "\u2713 " + _root._applyDone + qsTr(" updated, ") + _root._applySkipped + qsTr(" skipped")
+                    if (_root._applySkipped > 0) return "\u2713 " + _root._applyDone + qsTr(" updated, ") + _root._applySkipped + qsTr(" skipped")
                     return "\u2713 " + _root._applyDone + qsTr(" waypoints updated")
                 }
             }
-
             MouseArea {
-                id: applyMa
-                anchors.fill: parent
-                hoverEnabled: true
-                // TTS: معطَّل لو النص غير صالح — يمنع الحساب بقيمة قديمة
-                enabled: _root._visualItems && _root._visualItems.count > 1
-                         && wpAltField.acceptableInput
-                onClicked: {
-                    // TTS: احفظ الحقل أولاً، ثم احسب — بلا حاجة لـ Enter
-                    if (_root._commitAltField()) {
-                        _root._applyAltToAll()
-                    }
-                }
+                id: applyMa; anchors.fill: parent; hoverEnabled: true
+                enabled: _root._visualItems && _root._visualItems.count > 1 && wpAltField.acceptableInput
+                onClicked: { if (_root._commitAltField()) _root._applyAltToAll() }
             }
         }
 
-        // ── TTS: صيغة عرض الإحداثيات (GEO / UTM / MGRS) ──────────────────
-        //     تنعكس فوراً على صندوق إحداثيات الماوس فوق الخريطة وعلى أعمدة
-        //     الجدول السفلي. التحويل بدوال QGC الأصلية (QGCGeo).
+        // ── Coordinate Format ─────────────────────────────────────────────
         RowLayout {
             Layout.fillWidth: true
             spacing: ScreenTools.defaultFontPixelWidth * 0.5
-
             QGCLabel { text: qsTr("Coordinate Format") }
-
             QGCComboBox {
                 Layout.fillWidth: true
                 model: [ qsTr("Geographic"), qsTr("UTM"), qsTr("MGRS") ]
@@ -254,70 +226,73 @@ Rectangle {
                 onActivated: (index) => { if (_fmtFact) _fmtFact.rawValue = index }
             }
         }
-        // ── TTS: قسم Flight Speed محذوف بطلب صريح — الكود القديم معلّق ──────
-        // RowLayout {
-        //     Layout.fillWidth: true
-        //     visible: _root._settingsItem ? _root._settingsItem.speedSection.available : false
-        //     spacing: ScreenTools.defaultFontPixelWidth
-        //     QGCCheckBox {
-        //         text: qsTr("Flight Speed")
-        //         checked: _root._settingsItem ? _root._settingsItem.speedSection.specifyFlightSpeed : false
-        //         onClicked: {
-        //             if (_root._settingsItem) {
-        //                 _root._settingsItem.speedSection.specifyFlightSpeed = checked
-        //             }
-        //         }
-        //     }
-        //     LabelledFactTextField {
-        //         Layout.fillWidth: true
-        //         label: ""
-        //         fact: _root._settingsItem ? _root._settingsItem.speedSection.flightSpeed : null
-        //         enabled: _root._settingsItem ? _root._settingsItem.speedSection.specifyFlightSpeed : false
-        //     }
-        // }
-        // ── TTS: قسم Expected Vehicle Speeds محذوف بطلب صريح — معلّق ────────
-        // SectionHeader {
-        //     id: vehicleSpeedsSectionHeader
-        //     Layout.fillWidth: true
-        //     text: qsTr("Expected Vehicle Speeds")
-        //     visible: _root._showCruiseSpeed || _root._showHoverSpeed || _root._showAscentDescentSpeed
-        // }
-        // ColumnLayout {
-        //     Layout.fillWidth: true
-        //     spacing: ScreenTools.defaultFontPixelHeight * 0.5
-        //     visible: vehicleSpeedsSectionHeader.visible && vehicleSpeedsSectionHeader.checked
-        //     QGCLabel {
-        //         Layout.fillWidth: true
-        //         wrapMode: Text.WordWrap
-        //         font.pointSize: ScreenTools.smallFontPointSize
-        //         text: qsTr("The following speed values are used to calculate total mission time. They do not affect the flight speed for the mission.")
-        //     }
-        //     FactTextFieldSlider {
-        //         Layout.fillWidth: true
-        //         label: _root._isVtol ? qsTr("FW - Flight speed") : qsTr("Flight speed")
-        //         fact: QGroundControl.settingsManager.appSettings.offlineEditingCruiseSpeed
-        //         visible: _root._showCruiseSpeed
-        //         enabled: !_root._flightSpeedSpecified
-        //     }
-        //     FactTextFieldSlider {
-        //         Layout.fillWidth: true
-        //         label: _root._isVtol ? qsTr("MR - Flight speed") : qsTr("Flight speed")
-        //         fact: QGroundControl.settingsManager.appSettings.offlineEditingHoverSpeed
-        //         visible: _root._showHoverSpeed
-        //         enabled: !_root._flightSpeedSpecified
-        //     }
-        //     FactTextFieldSlider {
-        //         Layout.fillWidth: true
-        //         label: _root._isVtol ? qsTr("MR - Ascent speed") : qsTr("Ascent speed")
-        //         fact: QGroundControl.settingsManager.appSettings.offlineEditingAscentSpeed
-        //         visible: _root._showAscentDescentSpeed
-        //     }
-        //     FactTextFieldSlider {
-        //         Layout.fillWidth: true
-        //         label: _root._isVtol ? qsTr("MR - Descent speed") : qsTr("Descent speed")
-        //         fact: QGroundControl.settingsManager.appSettings.offlineEditingDescentSpeed
-        //         visible: _root._showAscentDescentSpeed
-        //     }
-        // }
+
+        // ── TTS: Mission Speed ────────────────────────────────────────────
+        RowLayout {
+            Layout.fillWidth: true
+            spacing: ScreenTools.defaultFontPixelWidth * 0.5
+            QGCLabel { text: qsTr("Mission Speed") }
+            QGCTextField {
+                id: ttsMissionSpeedField
+                Layout.fillWidth: true
+                text: {
+                    var spd = QGroundControl.settingsManager.appSettings.offlineEditingCruiseSpeed.rawValue * 1.0
+                    if (spd <= 0) return "40"
+                    return (QGroundControl.unitsConversion.metersSecondToAppSettingsSpeedUnits(spd) * 1.0).toFixed(1)
+                }
+                validator: DoubleValidator { bottom: 0.1; decimals: 1; notation: DoubleValidator.StandardNotation }
+            }
+            QGCLabel { text: QGroundControl.unitsConversion.appSettingsSpeedUnitsString }
+        }
+
+        // ── زر Calculate ETA ──────────────────────────────────────────────
+        Rectangle {
+            Layout.fillWidth: true
+            height: ScreenTools.defaultFontPixelHeight * 2.0
+            radius: ScreenTools.defaultFontPixelWidth * 0.4
+            color: etaMa.pressed ? Qt.rgba(0,1,0.53,0.25) : etaMa.containsMouse ? Qt.rgba(0,1,0.53,0.10) : "transparent"
+            border.color: qgcPal.colorGreen
+            border.width: 1.5
+            Behavior on color { ColorAnimation { duration: 120 } }
+            QGCLabel {
+                anchors.centerIn: parent
+                font.pointSize: ScreenTools.defaultFontPointSize; font.bold: true; color: qgcPal.colorGreen
+                text: qsTr("Calculate ETA")
+            }
+            MouseArea {
+                id: etaMa; anchors.fill: parent; hoverEnabled: true
+                onClicked: _root._calculateETA()
+            }
+        }
+
+        // ── نتيجة ETA (تظهر تحت الزر بعد الحساب) ─────────────────────────
+        Rectangle {
+            Layout.fillWidth: true
+            height: ScreenTools.defaultFontPixelHeight * 2.2
+            radius: ScreenTools.defaultFontPixelWidth * 0.4
+            color: Qt.rgba(0, 0, 0, 0.3)
+            border.color: _root._etaReady ? "#00FF88" : qgcPal.colorGrey
+            border.width: 1
+            visible: true
+            Row {
+                anchors.centerIn: parent
+                spacing: ScreenTools.defaultFontPixelWidth * 2
+                QGCLabel {
+                    text: _root._etaDistance
+                    font.pointSize: ScreenTools.defaultFontPointSize
+                    font.bold: true
+                    color: _root._etaReady ? "#00FF88" : qgcPal.colorGrey
+                    anchors.verticalCenter: parent.verticalCenter
+                }
+                QGCLabel {
+                    text: "\u23F1  " + _root._etaResult
+                    font.pointSize: ScreenTools.defaultFontPointSize
+                    font.bold: true
+                    color: _root._etaReady ? "#00FF88" : qgcPal.colorGrey
+                    anchors.verticalCenter: parent.verticalCenter
+                }
+            }
+        }
+        // ── END TTS Mission Speed + ETA ────────────────────────────────────
     }
 }

@@ -31,7 +31,20 @@ Window {
     height: ScreenTools.defaultFontPixelHeight * 25
     minimumWidth:  ScreenTools.defaultFontPixelWidth * 40
     minimumHeight: ScreenTools.defaultFontPixelHeight * 12
-    color:  "#0A0C0E"
+    /// Window chrome and chart background. Lighter than the original near-black
+    /// (#0A0C0E), which made the thin plot lines read as harsh bright strokes
+    /// on a void. The chart sits one step lighter than the surround so its
+    /// panel edge still reads.
+    readonly property color _windowBackground: "#141A1F"
+    readonly property color _plotBackground:   "#1B2329"
+
+    /// Marker line colours. Dimmed well below the text colour so a long
+    /// mission's dozen vertical lines read as a faint scale behind the data
+    /// rather than a picket fence in front of it.
+    readonly property color _markerLine:      "#5A6B78"
+    readonly property color _markerHighlight:  "#C8505F"
+
+    color:  _windowBackground
 
     flags: Qt.Window
 
@@ -62,6 +75,26 @@ Window {
     /// and shows two flat lines with no detail at all.
     readonly property real _minZoomSpan: Math.max(1, (_fullMaxX - _fullMinX) * 0.002)
 
+    /// How much one wheel notch changes the visible span. 1.25 means each
+    /// notch shows 80% of what it did before (or 125% when scrolling out).
+    readonly property real _wheelZoomStep: 1.25
+
+    /// How far past the mission's own length the view may be zoomed out. At 5
+    /// the whole profile occupies a fifth of the width, with empty margin all
+    /// round - far enough to see it in context (and to bring sea level and
+    /// below onto the altitude axis) without letting it shrink to a dot that
+    /// only Reset Zoom can recover from.
+    readonly property real _maxZoomOutFactor: 5
+
+    /// Drives TerrainStatus.autoFitYExpansion: 1 while the view is inside the
+    /// mission, then growing in step with the horizontal span once it is zoomed
+    /// out past it, so both axes open up together.
+    readonly property real _zoomOutExpansion: {
+        var fullSpan = _fullMaxX - _fullMinX
+        var viewSpan = _viewMaxX - _viewMinX
+        return (fullSpan > 0 && viewSpan > fullSpan) ? viewSpan / fullSpan : 1
+    }
+
     ColumnLayout {
         anchors.fill:    parent
         anchors.margins: ScreenTools.defaultFontPixelWidth
@@ -72,10 +105,44 @@ Window {
             spacing: ScreenTools.defaultFontPixelWidth * 0.5
 
             QGCLabel {
-                Layout.fillWidth: true
-                text: qsTr("Drag to select a distance range to zoom")
+                text: qsTr("Scroll to zoom, or drag to select a distance range")
                 opacity: 0.7
                 font.pointSize: ScreenTools.smallFontPointSize
+            }
+
+            Item { Layout.fillWidth: true }
+
+            // Legend. Colours are the LineSeries colours declared in
+            // TerrainStatus.qml - keep the two in step if a series colour ever
+            // changes there. "No terrain data" is the one worth calling out:
+            // that line is not an altitude reading at all, it marks a stretch
+            // where QGC has no terrain tiles, so the altitudes shown around it
+            // can't be trusted.
+            Repeater {
+                model: [
+                    { swatch: "orange", label: qsTr("Flight path") },
+                    { swatch: "green",  label: qsTr("Terrain") },
+                    { swatch: "red",    label: qsTr("Terrain collision") },
+                    { swatch: "yellow", label: qsTr("No terrain data") }
+                ]
+
+                RowLayout {
+                    Layout.rightMargin: ScreenTools.defaultFontPixelWidth
+                    spacing:            ScreenTools.defaultFontPixelWidth * 0.4
+
+                    Rectangle {
+                        Layout.preferredWidth:  ScreenTools.defaultFontPixelWidth * 1.6
+                        Layout.preferredHeight: Math.max(2, ScreenTools.defaultFontPixelHeight * 0.16)
+                        Layout.alignment:       Qt.AlignVCenter
+                        color:                  modelData.swatch
+                    }
+
+                    QGCLabel {
+                        text:           modelData.label
+                        opacity:        0.7
+                        font.pointSize: ScreenTools.smallFontPointSize
+                    }
+                }
             }
 
             QGCButton {
@@ -103,6 +170,29 @@ Window {
                 autoFitY:     true
                 externalMinY: NaN
                 externalMaxY: NaN
+
+                // Opens the altitude scale up in step with the horizontal one
+                // once the view is zoomed out past the mission itself.
+                autoFitYExpansion: elevationWindow._zoomOutExpansion
+
+                // Draw the WP3 marker as a red dashed line so it stands out
+                // against the plain white marker lines of the other waypoints.
+                // Change this number to highlight a different waypoint, or set
+                // it to -1 to turn the highlight off.
+                // WP3 is drawn as a solid coloured line; every other waypoint
+                // marker is dashed and muted, so the dozen ordinary markers on
+                // a long mission read as a faint scale behind the data instead
+                // of a picket fence in front of it. Set highlightSeqNum to -1
+                // to turn the highlight off.
+                highlightSeqNum:      3
+                highlightMarkerColor: elevationWindow._markerHighlight
+                markerLineColor:      elevationWindow._markerLine
+                dashOrdinaryMarkers:  true
+
+                // A step up from the near-black window colour. Lines read more
+                // softly against it, and the panel edge stays distinguishable
+                // from the surrounding window.
+                plotBackgroundColor: elevationWindow._plotBackground
 
                 onSetCurrentSeqNum: {
                     if (elevationWindow.missionController)
@@ -141,12 +231,34 @@ Window {
                 readonly property real clampedHi: Math.min(plotRect.x + plotRect.width,
                                                     Math.max(startX, currentX))
 
+                /// Wheel zoom, anchored on the cursor: the distance under the
+                /// pointer stays put while the range grows or shrinks around
+                /// it, so you can point at a feature and scroll into it rather
+                /// than zooming to the middle and then hunting for it again.
+                onWheel: (wheel) => {
+                    if (plotRect.width <= 0) return
+
+                    var delta = wheel.angleDelta.y
+                    if (delta === 0) return
+
+                    // One notch is 120 units; trackpads send smaller steps, so
+                    // scale the factor by the actual delta instead of treating
+                    // every event as a full notch.
+                    var notches = delta / 120
+                    var factor  = Math.pow(1 / elevationWindow._wheelZoomStep, notches)
+
+                    var fraction = (wheel.x - plotRect.x) / plotRect.width
+                    fraction = Math.max(0, Math.min(1, fraction))
+
+                    elevationWindow._zoomAtFraction(fraction, factor)
+                    wheel.accepted = true
+                }
+
                 onPressed: (mouse) => {
                     dragging = true
                     startX   = mouse.x
                     currentX = mouse.x
                 }
-
                 onPositionChanged: (mouse) => {
                     if (dragging) currentX = mouse.x
                 }
@@ -220,6 +332,40 @@ Window {
         if (newMaxX - newMinX < _minZoomSpan) return
         _viewMinX = newMinX
         _viewMaxX = newMaxX
+    }
+
+    /// Scales the visible span by 'factor' while keeping the distance that sits
+    /// at 'fraction' across the plot (0 = left edge, 1 = right edge) pinned in
+    /// place.
+    ///
+    /// Zooming in is clamped to _minZoomSpan. Zooming out is allowed to run
+    /// past the mission's own extent, up to _maxZoomOutFactor times its length;
+    /// beyond the mission the range is left exactly where the anchor puts it,
+    /// so the X axis is free to show 0 and negative distances as empty margin
+    /// around the profile. Inside the mission the old behaviour still applies:
+    /// the range is pushed back within bounds rather than drifting off the end.
+    function _zoomAtFraction(fraction, factor) {
+        var span = _viewMaxX - _viewMinX
+        if (!(span > 0)) return
+
+        var fullSpan = _fullMaxX - _fullMinX
+        var maxSpan  = fullSpan > 0 ? fullSpan * _maxZoomOutFactor : span
+        var newSpan  = Math.max(_minZoomSpan, Math.min(maxSpan, span * factor))
+        if (newSpan === span) return
+
+        var anchorValue = _viewMinX + fraction * span
+        var newMin      = anchorValue - fraction * newSpan
+
+        if (newSpan <= fullSpan) {
+            if (newMin < _fullMinX) {
+                newMin = _fullMinX
+            } else if (newMin + newSpan > _fullMaxX) {
+                newMin = _fullMaxX - newSpan
+            }
+        }
+
+        _viewMinX = newMin
+        _viewMaxX = newMin + newSpan
     }
 
     function _resetZoom() {

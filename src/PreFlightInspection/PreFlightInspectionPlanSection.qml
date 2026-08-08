@@ -88,8 +88,8 @@ Column {
         // ── Automatic check thresholds ────────────────────────────────────
         // Airframe decisions, not code decisions. Only the vibration figures
         // come from published ArduPilot guidance; tune the rest per aircraft.
-        property real batteryWarnPct: 60
-        property real batteryFailPct: 30
+        property real batteryWarnPct: 95
+        property real batteryFailPct: 95
         property int  gpsMinSats:     10
         property real gpsMaxHdop:     1.5
         property real vibeWarnMs2:    30      // ArduPilot: <30 good, >60 bad
@@ -102,16 +102,15 @@ Column {
             ListElement { name: qsTr("Compass");   iconSource: "/qmlimages/Compass.svg";    status: 0; detail: "" }
             ListElement { name: qsTr("EKF");       iconSource: "/qmlimages/PaperPlane.svg"; status: 0; detail: "" }
             ListElement { name: qsTr("Vibration"); iconSource: "/qmlimages/Vibration.svg";  status: 0; detail: "" }
-            ListElement { name: qsTr("Telemetry"); iconSource: "/qmlimages/Antenna.svg";    status: 0; detail: "" }
+           // ListElement { name: qsTr("Telemetry"); iconSource: "/qmlimages/Antenna.svg";    status: 0; detail: "" }
             ListElement { name: qsTr("Mission");   iconSource: "/qmlimages/Plan.svg";       status: 0; detail: "" }
         }
         readonly property ListModel manualChecklist: ListModel {
             ListElement { label: qsTr("Pushrod connected"); checked: false; mandatory: true }
-            ListElement { label: qsTr("Wings Locked");        checked: false; mandatory: true }
+            ListElement { label: qsTr("Fins Locked");        checked: false; mandatory: true }
             ListElement { label: qsTr("Payload Secured");     checked: false; mandatory: true }
             ListElement { label: qsTr("Battery Secured");     checked: false; mandatory: true }
             ListElement { label: qsTr("ESAD Connected");      checked: false; mandatory: true }
-            ListElement { label: qsTr("RC Link Established");       checked: false; mandatory: true }
         }
         // Elevon test steps. ch1/ch2 start at 0 and are populated at runtime
         // by populateStepValues() from the vehicle's own RC calibration and
@@ -252,8 +251,7 @@ Column {
             var pct  = _try(function() { return b.percentRemaining.rawValue })
             var volt = _try(function() { return b.voltage.valueString })
             if (!_isNum(pct)) return _noSource()
-            var status = pct < batteryFailPct ? PreFlightStatus.Fail
-                       : pct < batteryWarnPct ? PreFlightStatus.Warn : PreFlightStatus.Pass
+            var status = pct < batteryFailPct ? PreFlightStatus.Fail : PreFlightStatus.Pass
             var detail = pct.toFixed(0) + "%"
             if (volt !== undefined) detail = volt + "  \u00B7  " + detail
             return _result(status, detail)
@@ -366,7 +364,7 @@ Column {
             _apply(2, _checkCompass())
             _apply(3, _checkEkf())
             _apply(4, _checkVibration())
-            _apply(5, _checkTelemetry())
+          //  _apply(5, _checkTelemetry())
             _apply(6, _checkMission())
             recalculateAutomaticStatus()
         }
@@ -654,7 +652,7 @@ Column {
             // QGCCorePlugin.cc), and appSettings.missionSavePath is QGC's
             // own fixed mission-save location — sidesteps all
             // StandardPaths/toLocalFile portability issues entirely.
-            var saveDir  = _try(function() { return QGroundControl.settingsManager.appSettings.missionSavePath.toString() }) || ""
+            var saveDir  = _try(function() { return QGroundControl.settingsManager.appSettings.logSavePath.toString() }) || ""
             var savePath = saveDir + "/PFI_" + namePart + timestamp + ".txt"
 
             if (fileWriter.save(savePath, content)) {
@@ -934,7 +932,7 @@ Column {
                         QGCLabel {
                             Layout.fillWidth: true
                             visible: !inspectionController.controlSurfaceTestStarted
-                            text: qsTr("Ensure the pushrod is properly connected to the servo before starting the test. Do not move the RC sticks during the test.")
+                            text: qsTr("Ensure the pushrod is properly connected to the servo before starting the test.")
                             wrapMode: Text.WordWrap; opacity: 0.8
                         }
                         // ── Hazard acknowledgment ──

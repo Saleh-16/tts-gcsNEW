@@ -110,12 +110,12 @@
             "shortDesc": "Default altitude automatically assigned to new waypoints during mission planning.",
             "longDesc": "This value specifies the default altitude for new items added to a mission.",
             "type": "double",
-            "default": 50.0,
+            "default": 400.0,
             "min": 0.0,
             "units": "m",
             "decimalPlaces": 1,
             "userMin": 0.0,
-            "userMax": 121.92,
+            "userMax": 1000,
             "label": "Default Mission Altitude",
             "keywords": "mission altitude,default altitude"
         },
@@ -135,7 +135,7 @@
             "shortDesc": "Mute audio output",
             "longDesc": "Mutes all audio output without changing the volume level.",
             "type": "bool",
-            "default": false,
+            "default": true,
             "label": "Mute Audio Output",
             "keywords": "audio,mute,sound"
         },

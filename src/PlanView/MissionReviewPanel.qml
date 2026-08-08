@@ -20,13 +20,15 @@ Item {
     property bool   _hasResults:        false
     property bool   _stale:             false
     property bool   _accepted:          false
+    property bool   _confirmed:         false
     property real   _progress:          0
     // ── Upload/Save control ──
+    // Locked until: review done AND (no issues OR confirmed)
     property bool uploadAllowed: {
-        if (!_hasResults) return true
-        if (!_report) return true
-        if (!_report.requiresAcknowledgment) return true
-        return _accepted
+        if (!_hasResults) return false                         // no review yet — BLOCKED
+        if (!_report) return false
+        if (!_report.requiresAcknowledgment) return true      // no issues — allow
+        return _confirmed                                      // issues exist — only after confirm
     }
     signal riskAccepted(string reportText)
     property bool _hasHome:     _itemCount > 0
@@ -62,6 +64,7 @@ Item {
         _reviewing = true
         _progress = 0
         _accepted = false
+        _confirmed = false
         progressTimer.start()
     }
     Timer {
@@ -418,6 +421,7 @@ Item {
                                                 spacing: ScreenTools.defaultFontPixelHeight * 0.1
                                                 Row {
                                                     spacing: ScreenTools.defaultFontPixelWidth * 0.3
+                                                    width: parent.width
                                                     QGCLabel {
                                                         text: modelData.severity === "CRITICAL" ? "✗" : modelData.severity === "WARNING" ? "⚠" : "✓"
                                                         font.pointSize: ScreenTools.defaultFontPointSize * 0.95
@@ -427,6 +431,8 @@ Item {
                                                         text: modelData.problem || modelData.issue || ""
                                                         font.pointSize: ScreenTools.defaultFontPointSize * 0.9
                                                         font.bold: true
+                                                        width: parent.width - ScreenTools.defaultFontPixelWidth * 2
+                                                        wrapMode: Text.WordWrap
                                                     }
                                                 }
                                                 QGCLabel {
@@ -434,6 +440,16 @@ Item {
                                                     text: modelData.explanation || modelData.description || ""
                                                     font.pointSize: ScreenTools.defaultFontPointSize * 0.75
                                                     color: qgcPal.colorGrey
+                                                    wrapMode: Text.WordWrap
+                                                    leftPadding: ScreenTools.defaultFontPixelWidth * 1.2
+                                                }
+                                                QGCLabel {
+                                                    width: parent.width
+                                                    visible: modelData.severity !== "NOTICE" && modelData.recommendation !== undefined && modelData.recommendation !== ""
+                                                    text: "→ " + (modelData.recommendation || "")
+                                                    font.pointSize: ScreenTools.defaultFontPointSize * 0.75
+                                                    font.bold: true
+                                                    color: qgcPal.colorOrange
                                                     wrapMode: Text.WordWrap
                                                     leftPadding: ScreenTools.defaultFontPixelWidth * 1.2
                                                 }
@@ -494,6 +510,10 @@ Item {
                                     Row { spacing: ScreenTools.defaultFontPixelWidth * 0.3
                                         QGCLabel { text: _report ? _report.stats.maxAltitude.toFixed(0) + "m" : ""; font.pointSize: ScreenTools.defaultFontPointSize * 0.95; font.bold: true }
                                         QGCLabel { text: qsTr("max alt");   font.pointSize: ScreenTools.defaultFontPointSize * 0.75; color: qgcPal.colorGrey }
+                                    }
+                                    Row { spacing: ScreenTools.defaultFontPixelWidth * 0.3
+                                        QGCLabel { text: _report ? _report.stats.minAltitude.toFixed(0) + "m" : ""; font.pointSize: ScreenTools.defaultFontPointSize * 0.95; font.bold: true }
+                                        QGCLabel { text: qsTr("min alt");   font.pointSize: ScreenTools.defaultFontPointSize * 0.75; color: qgcPal.colorGrey }
                                     }
                                     Row { spacing: ScreenTools.defaultFontPixelWidth * 0.3
                                         QGCLabel { text: _report ? _fmtDist(_report.stats.maxRange) : ""; font.pointSize: ScreenTools.defaultFontPointSize * 0.95; font.bold: true }
@@ -565,34 +585,78 @@ Item {
                                         anchors.fill: parent
                                         onClicked: {
                                             _accepted = !_accepted
-                                            if (_accepted && _report) {
-                                                var reportText = _generateRiskReport()
-                                                riskAccepted(reportText)
-                                                var d = new Date()
-                                                var fname = "RiskReport_" +
-                                                    d.getFullYear() +
-                                                    (d.getMonth()+1).toString().padStart(2,"0") +
-                                                    d.getDate().toString().padStart(2,"0") + "_" +
-                                                    d.getHours().toString().padStart(2,"0") +
-                                                    d.getMinutes().toString().padStart(2,"0") +
-                                                    d.getSeconds().toString().padStart(2,"0") + ".txt"
-                                                var savePath = QGroundControl.settingsManager.appSettings.missionSavePath.toString() + "/" + fname
-                                                if (fileWriter.save(savePath, reportText)) {
-                                                    console.log("Risk report saved: " + savePath + " (" + reportText.length + " chars)")
-                                                } else {
-                                                    console.warn("FAILED to save risk report: " + savePath)
-                                                }
+                                            if (!_accepted) _confirmed = false
+                                        }
+                                    }
+                                }
+                                // ── Confirm button (appears after accept) ──
+                                Rectangle {
+                                    width: parent.width
+                                    height: ScreenTools.defaultFontPixelHeight * 2.2
+                                    radius: ScreenTools.defaultFontPixelWidth * 0.4
+                                    visible: _accepted && !_confirmed
+                                    color: "transparent"
+                                    border.color: qgcPal.colorOrange
+                                    border.width: 1.5
+                                    QGCLabel {
+                                        anchors.centerIn: parent
+                                        text: qsTr("Confirm & Save Report")
+                                        font.pointSize: ScreenTools.defaultFontPointSize * 1.05
+                                        font.bold: true
+                                        color: qgcPal.colorOrange
+                                    }
+                                    MouseArea {
+                                        anchors.fill: parent
+                                        onClicked: {
+                                            _confirmed = true
+                                            var reportText = _generateRiskReport()
+                                            riskAccepted(reportText)
+                                            var d = new Date()
+                                            var fname = "RiskReport_" +
+                                                d.getFullYear() +
+                                                (d.getMonth()+1).toString().padStart(2,"0") +
+                                                d.getDate().toString().padStart(2,"0") + "_" +
+                                                d.getHours().toString().padStart(2,"0") +
+                                                d.getMinutes().toString().padStart(2,"0") +
+                                                d.getSeconds().toString().padStart(2,"0") + ".txt"
+                                            var savePath = QGroundControl.settingsManager.appSettings.logSavePath.toString() + "/" + fname
+                                            if (fileWriter.save(savePath, reportText)) {
+                                                console.log("Risk report saved: " + savePath + " (" + reportText.length + " chars)")
+                                            } else {
+                                                console.warn("FAILED to save risk report: " + savePath)
                                             }
                                         }
                                     }
                                 }
                             }
                         }
+                        // ── Review required notice (before any review) ──
+                        Rectangle {
+                            width: parent.width
+                            height: reviewRequiredLabel.height + ScreenTools.defaultFontPixelHeight * 0.6
+                            radius: ScreenTools.defaultFontPixelWidth * 0.3
+                            visible: !_hasResults
+                            color: Qt.rgba(1, 0.7, 0, 0.06)
+                            border.width: 1
+                            border.color: Qt.rgba(1, 0.7, 0, 0.2)
+                            QGCLabel {
+                                id: reviewRequiredLabel
+                                width: parent.width - ScreenTools.defaultFontPixelWidth * 2
+                                anchors.centerIn: parent
+                                text: qsTr("Upload & Save BLOCKED - review mission first")
+                                font.pointSize: ScreenTools.defaultFontPointSize * 0.82
+                                font.bold: true
+                                color: qgcPal.colorOrange
+                                wrapMode: Text.WordWrap
+                                horizontalAlignment: Text.AlignHCenter
+                            }
+                        }
+                        // ── Upload blocked notice (after review, before confirm) ──
                         Rectangle {
                             width: parent.width
                             height: blockedLabel.height + ScreenTools.defaultFontPixelHeight * 0.6
                             radius: ScreenTools.defaultFontPixelWidth * 0.3
-                            visible: _report !== null && _report.requiresAcknowledgment && !_accepted
+                            visible: _hasResults && _report !== null && _report.requiresAcknowledgment && !_confirmed
                             color: Qt.rgba(1, 0, 0, 0.06)
                             border.width: 1
                             border.color: Qt.rgba(1, 0, 0, 0.2)
@@ -600,7 +664,7 @@ Item {
                                 id: blockedLabel
                                 width: parent.width - ScreenTools.defaultFontPixelWidth * 2
                                 anchors.centerIn: parent
-                                text: qsTr("Upload & Save BLOCKED - accept responsibility first")
+                                text: qsTr("Upload & Save BLOCKED - accept and confirm first")
                                 font.pointSize: ScreenTools.defaultFontPointSize * 0.82
                                 font.bold: true
                                 color: qgcPal.colorRed
@@ -608,11 +672,12 @@ Item {
                                 horizontalAlignment: Text.AlignHCenter
                             }
                         }
+                        // ── Upload allowed notice (after confirm) ──
                         Rectangle {
                             width: parent.width
                             height: allowedLabel.height + ScreenTools.defaultFontPixelHeight * 0.6
                             radius: ScreenTools.defaultFontPixelWidth * 0.3
-                            visible: _report !== null && _report.requiresAcknowledgment && _accepted
+                            visible: _hasResults && _report !== null && _report.requiresAcknowledgment && _confirmed
                             color: Qt.rgba(0, 1, 0.53, 0.06)
                             border.width: 1
                             border.color: Qt.rgba(0, 1, 0.53, 0.2)
@@ -620,7 +685,7 @@ Item {
                                 id: allowedLabel
                                 width: parent.width - ScreenTools.defaultFontPixelWidth * 2
                                 anchors.centerIn: parent
-                                text: qsTr("Upload & Save UNLOCKED - risk report saved")
+                                text: qsTr("Upload & Save UNLOCKED - report saved")
                                 font.pointSize: ScreenTools.defaultFontPointSize * 0.82
                                 font.bold: true
                                 color: qgcPal.colorGreen
@@ -658,9 +723,11 @@ Item {
         if (!_report) return []
         var angleFindings = _filterFindings("GEOMETRY")
         var wp3Findings = _filterFindings("CONSISTENCY")
+        var spacingFindings = _filterFindings("SPACING")
         return [
             { title: qsTr("Climb / Descent Angle"), badge: _smartBadge(angleFindings), badgeColor: _smartBadgeColor(angleFindings), findings: angleFindings },
-            { title: qsTr("WP3 Distance from Home"), badge: _smartBadge(wp3Findings), badgeColor: _smartBadgeColor(wp3Findings), findings: wp3Findings }
+            { title: qsTr("WP3 Distance from Home"), badge: _smartBadge(wp3Findings), badgeColor: _smartBadgeColor(wp3Findings), findings: wp3Findings },
+            { title: qsTr("Takeoff Spacing"), badge: _smartBadge(spacingFindings), badgeColor: _smartBadgeColor(spacingFindings), findings: spacingFindings }
         ]
     }
 }

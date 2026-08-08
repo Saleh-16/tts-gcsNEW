@@ -7,9 +7,15 @@ import QGroundControl.Controls
 Rectangle {
     id:         root
     radius:     ScreenTools.defaultFontPixelWidth * 0.5
-    color:      qgcPal.window
+    color:      root.plotBackgroundColor
     opacity:    0.80
     clip:       true
+
+    /// Background behind the chart. Defaults to the standard QGC window colour
+    /// so the embedded PlanView chart is unchanged; the standalone viewer
+    /// overrides it with a lighter tone, which is easier on the eyes over a
+    /// long session than near-black.
+    property color plotBackgroundColor: qgcPal.window
 
     property var missionController
 
@@ -50,6 +56,47 @@ Rectangle {
     property real _missionTotalDistance:    isNaN(missionController.missionTotalDistance) ? 100 : missionController.missionTotalDistance
     property var  _unitsConversion:         QGroundControl.unitsConversion
 
+    /// Sequence number of the mission item drawn as a solid, coloured vertical
+    /// line, while every other marker is drawn dashed and muted - a way to make
+    /// one waypoint stand out on the profile. -1 (the default) means no item is
+    /// highlighted, which is what the embedded PlanView chart uses.
+    property int   highlightSeqNum:         -1
+    property color highlightMarkerColor:    "red"
+
+    /// Colour of the ordinary (dashed) vertical waypoint marker lines.
+    /// Overridable so a viewer can mute them: on a long mission there can be a
+    /// dozen of them, and at full text brightness they dominate the chart more
+    /// than the data they are only meant to annotate.
+    property color markerLineColor:         qgcPal.text
+
+    /// When false (the default) every marker line is solid, which is how the
+    /// embedded PlanView chart has always looked. Viewers that want the
+    /// muted-scale treatment turn it on; the highlighted item stays solid
+    /// either way.
+    property bool  dashOrdinaryMarkers:     false
+
+    /// Length of one dash, and of the gap between dashes, for that marker.
+    property real _markerDashLength:        ScreenTools.defaultFontPixelHeight * 0.35
+
+    /// Line widths. Derived from the font metrics rather than hard-coded pixel
+    /// counts so they hold up on high-DPI screens, where a 1px line renders as
+    /// a hairline. The floors keep them from ever disappearing on very small
+    /// displays.
+    ///
+    /// The two are deliberately different: the terrain and flight lines are
+    /// the data, so they are drawn thick enough to follow comfortably, while
+    /// the waypoint marker lines are only positional references and stay thin
+    /// so they don't compete with the data. The marker multiplier reproduces
+    /// the original 1px look on a standard-DPI screen and scales up from there.
+    property real _seriesLineWidth:         Math.max(2, ScreenTools.defaultFontPixelWidth * 0.4)
+    property real _markerLineWidth:         Math.max(1, ScreenTools.defaultFontPixelWidth * 0.12)
+
+    /// The highlighted marker is drawn thicker than the ordinary ones so it
+    /// reads at a glance on a busy profile - colour alone is easy to miss on a
+    /// hairline. Still derived from the font metrics so it scales with the
+    /// display like everything else.
+    property real _highlightLineWidth:      Math.max(2, ScreenTools.defaultFontPixelWidth * 0.32)
+
     /// Approximate number of X axis tick labels aimed for at any zoom level.
     /// A single knob controlling overall label density on the distance axis.
     property int  _targetTickCount:         8
@@ -57,16 +104,27 @@ Rectangle {
     /// Same idea for the Y (altitude) axis. Kept lower than the X target
     /// because the chart is much shorter than it is wide, so fewer labels
     /// fit vertically before they start crowding each other.
-    property int  _targetTickCountY:        5
+    property int  _targetTickCountY:        6
 
-    /// Smallest "nice" step (1 / 2 / 5 x 10^n) that yields roughly targetCount
-    /// labels across the given visible span. Used by both axes so that tick
-    /// density adapts to zoom: as the visible range shrinks, the step shrinks
-    /// with it and more (finer) labels appear, instead of always showing the
-    /// same fixed number of ticks stretched across whatever range happens to
-    /// be visible. Restricting the step to 1/2/5 multiples keeps the printed
-    /// values readable (200, 205, 210...) rather than arbitrary fractions of
-    /// the range.
+    /// Largest "nice" step (1 / 2 / 2.5 / 5 x 10^n) that is no bigger than an
+    /// even split of the span into targetCount parts. Used by both axes so that
+    /// tick density adapts to zoom: as the visible range shrinks, the step
+    /// shrinks with it and more (finer) labels appear, instead of always
+    /// showing the same fixed number of ticks stretched across whatever range
+    /// happens to be visible. Restricting the step to those multiples keeps
+    /// the printed values readable (200, 205, 210...) rather than arbitrary
+    /// fractions of the range.
+    ///
+    /// The step is rounded DOWN to the next nice value, never up. Rounding up
+    /// can silently halve the label count - a 450 m span split 8 ways gives
+    /// 56.25, which rounds up to 100 and leaves only 5 labels instead of the
+    /// 8 asked for. Rounding down guarantees at least targetCount labels.
+    ///
+    /// 2.5 sits in the ladder because without it the gap from 2 to 5 is wide
+    /// enough that one extra requested label can double the actual count: a
+    /// 355 m span asks for 44 and drops straight to 20, printing 18 labels
+    /// where 15 were wanted. 2.5 gives the in-between step (25) and keeps the
+    /// values round.
     function _niceTickStep(span, targetCount) {
         if (!(span > 0) || !(targetCount > 0)) {
             return 1
@@ -74,7 +132,7 @@ Rectangle {
         var rough = span / targetCount
         var mag   = Math.pow(10, Math.floor(Math.log(rough) / Math.LN10))
         var norm  = rough / mag                     // 1 <= norm < 10
-        var nice  = norm <= 1 ? 1 : norm <= 2 ? 2 : norm <= 5 ? 5 : 10
+        var nice  = norm < 2 ? 1 : norm < 2.5 ? 2 : norm < 5 ? 2.5 : 5
         return nice * mag
     }
 
@@ -92,15 +150,24 @@ Rectangle {
     /// lines don't sit flush against the top and bottom edges of the plot.
     property real _autoFitYPadding: 0.10
 
+    /// Multiplies the fitted altitude span around its centre. Viewers set this
+    /// above 1 when the user zooms out past the mission's own extent, so the
+    /// vertical scale opens up in step with the horizontal one instead of
+    /// staying pinned to the data while the profile shrinks to a flat streak.
+    /// Large values are what bring 0 (sea level) and negative altitudes into
+    /// view.
+    property real autoFitYExpansion: 1
+
     /// Computed auto-fit bounds. NaN whenever auto-fit is off, no external X
     /// range is set, or no data falls inside the range - in which case the
     /// axis falls back to its normal full-range behavior.
     property real _autoMinY: NaN
     property real _autoMaxY: NaN
 
-    onAutoFitYChanged:      _updateAutoFitY()
-    onExternalMinXChanged:  _updateAutoFitY()
-    onExternalMaxXChanged:  _updateAutoFitY()
+    onAutoFitYChanged:          _updateAutoFitY()
+    onExternalMinXChanged:      _updateAutoFitY()
+    onExternalMaxXChanged:      _updateAutoFitY()
+    onAutoFitYExpansionChanged: _updateAutoFitY()
 
     /// Returns the series' points as a plain array, tolerating either the
     /// list-style 'points' property or the indexed at()/count API.
@@ -189,8 +256,15 @@ Rectangle {
         // Flat sections would collapse to a zero-height axis, so give them a
         // small artificial span centered on the value.
         var pad = span > 0 ? span * _autoFitYPadding : Math.max(1, Math.abs(acc.max) * 0.01)
-        _autoMinY = acc.min - pad
-        _autoMaxY = acc.max + pad
+
+        // Grow symmetrically about the centre of the data, so zooming out
+        // reveals altitude headroom on both sides rather than sliding the
+        // profile towards one edge.
+        var centre   = (acc.min + acc.max) / 2
+        var halfSpan = (span / 2 + pad) * Math.max(1, autoFitYExpansion)
+
+        _autoMinY = centre - halfSpan
+        _autoMaxY = centre + halfSpan
     }
 
     /// Maps a mission distance (raw metres, as reported by
@@ -269,9 +343,13 @@ Rectangle {
                     colorScheme:                qgcPal.globalTheme === QGCPalette.Light ? GraphsTheme.ColorScheme.Light : GraphsTheme.ColorScheme.Dark
                     backgroundColor:            "transparent"
                     backgroundVisible:          false
-                    plotAreaBackgroundColor:     qgcPal.window
-                    grid.mainColor:             applyOpacity(qgcPal.text, 0.5)
-                    grid.subColor:              applyOpacity(qgcPal.text, 0.3)
+                    plotAreaBackgroundColor:     root.plotBackgroundColor
+                    // Grid kept faint: readable as an altitude reference without
+                    // competing with the terrain and flight lines drawn on top.
+                    // Below roughly 0.2 the lines stop being visible at all on a
+                    // dark background, so this is about as light as it can go.
+                    grid.mainColor:             applyOpacity(qgcPal.text, 0.28)
+                    grid.subColor:              applyOpacity(qgcPal.text, 0.15)
                     grid.mainWidth:             1
                     labelBackgroundVisible:     false
                     labelTextColor:             qgcPal.text
@@ -288,6 +366,13 @@ Rectangle {
                                                     ? _unitsConversion.metersToAppSettingsHorizontalDistanceUnits(_missionTotalDistance)
                                                     : root.externalMaxX
                     lineVisible:                true
+
+                    // Vertical grid lines removed: distance is read off the
+                    // labels, and the waypoint marker lines already give the
+                    // vertical references that matter. The horizontal grid
+                    // (axisY) is kept as an altitude reference.
+                    gridVisible:                false
+                    subGridVisible:             false
 
                     // Adaptive tick density: the step is derived from the currently
                     // visible span rather than being a fixed fraction of it, so zooming
@@ -315,6 +400,11 @@ Rectangle {
                                                         : _unitsConversion.metersToAppSettingsVerticalDistanceUnits(_maxAMSLAltitude)
                     lineVisible:                true
 
+                    // Horizontal grid kept on: it is the altitude reference that
+                    // makes the chart readable at a glance. Stated explicitly so
+                    // it can't be lost if the theme default ever changes.
+                    gridVisible:                true
+
                     // Same adaptive scheme as the X axis: round altitude steps
                     // that get finer as the visible altitude range shrinks,
                     // with the first tick snapped to a multiple of the step so
@@ -330,7 +420,7 @@ Rectangle {
                 LineSeries {
                     id:         missingSeries
                     color:      "yellow"
-                    width:      2
+                    width:      root._seriesLineWidth
                 }
 
                 LineSeries {
@@ -342,13 +432,13 @@ Rectangle {
                 LineSeries {
                     id:         terrainSeries
                     color:      "green"
-                    width:      2
+                    width:      root._seriesLineWidth
                 }
 
                 LineSeries {
                     id:         flightSeries
                     color:      "orange"
-                    width:      2
+                    width:      root._seriesLineWidth
                 }
             }
 
@@ -376,14 +466,52 @@ Rectangle {
                         anchors.fill:   parent
                         visible:        object.specifiesCoordinate && !object.standaloneCoordinate
 
-                        Rectangle {
+                        Item {
                             id:         simpleItem
                             height:     terrainProfile.height
-                            width:      1
-                            color:      qgcPal.text
-                            x:          root._xForDistance(object.distanceFromStart)
+                            width:      _highlighted ? root._highlightLineWidth : root._markerLineWidth
+                            x:          root._xForDistance(object.distanceFromStart) - width / 2
                             visible:    (object.isSimpleItem || object.isSingleItem) &&
                                         root._distanceInView(object.distanceFromStart)
+
+                            // Was a plain Rectangle acting as the line itself.
+                            // It is now a container so the same marker can be
+                            // drawn either solid or as a dashed stack, without
+                            // disturbing the label anchored to its bottom.
+                            //
+                            // The highlighted item gets the SOLID line and the
+                            // ordinary ones are dashed: on a long mission the
+                            // dozen plain markers should read as a faint scale
+                            // behind the data, while the one item worth calling
+                            // out stands out by being both solid and coloured.
+                            readonly property bool _highlighted: object.sequenceNumber === root.highlightSeqNum
+                            readonly property bool _drawDashed:  root.dashOrdinaryMarkers && !_highlighted
+
+                            Rectangle {
+                                anchors.fill: parent
+                                color:        simpleItem._highlighted ? root.highlightMarkerColor : root.markerLineColor
+                                visible:      !simpleItem._drawDashed
+                            }
+
+                            // Dashed variant. QML has no dashed-line primitive
+                            // for a Rectangle, so the dashes are stacked with a
+                            // Column whose spacing forms the gaps.
+                            Column {
+                                anchors.fill: parent
+                                spacing:      root._markerDashLength
+                                visible:      simpleItem._drawDashed
+                                clip:         true
+
+                                Repeater {
+                                    model: Math.max(1, Math.ceil(simpleItem.height / (root._markerDashLength * 2)))
+
+                                    Rectangle {
+                                        width:  simpleItem.width
+                                        height: root._markerDashLength
+                                        color:  root.markerLineColor
+                                    }
+                                }
+                            }
 
                             MissionItemIndexLabel {
                                 anchors.horizontalCenter:   parent.horizontalCenter
@@ -399,8 +527,8 @@ Rectangle {
                         Rectangle {
                             id:         complexItemEntry
                             height:     terrainProfile.height
-                            width:      1
-                            color:      qgcPal.text
+                            width:      root._markerLineWidth
+                            color:      root.markerLineColor
                             x:          root._xForDistance(object.distanceFromStart)
                             visible:    complexItem.visible &&
                                         root._distanceInView(object.distanceFromStart)
@@ -418,8 +546,8 @@ Rectangle {
                         Rectangle {
                             id:         complexItemExit
                             height:     terrainProfile.height
-                            width:      1
-                            color:      qgcPal.text
+                            width:      root._markerLineWidth
+                            color:      root.markerLineColor
                             x:          root._xForDistance(object.distanceFromStart + object.complexDistance)
                             visible:    complexItem.visible &&
                                         root._distanceInView(object.distanceFromStart + object.complexDistance)

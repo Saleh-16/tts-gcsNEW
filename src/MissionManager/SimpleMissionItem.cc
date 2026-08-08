@@ -835,7 +835,7 @@ void SimpleMissionItem::_setDefaultsForCommand(void)
         _missionItem._param7Fact.setRawValue(defaultAlt);
         // Note that setAltitudeFrame will also set MAV_FRAME correctly through signalling
         // Takeoff items always use relative alt since that is the highest quality data to base altitude from
-        setAltitudeFrame(_missionController->globalAltitudeFrameDefault());
+        setAltitudeFrame(isTakeoffItem() ? QGroundControlQmlGlobal::AltitudeFrameRelative : _missionController->globalAltitudeFrameDefault());
     } else {
         _altitudeFact.setRawValue(0);
         _missionItem._param7Fact.setRawValue(0);
@@ -943,7 +943,7 @@ double SimpleMissionItem::specifiedGimbalPitch(void)
 
 double SimpleMissionItem::specifiedVehicleYaw(void)
 {
-    return (command() == MAV_CMD_NAV_WAYPOINT || command() == MAV_CMD_NAV_SPLINE_WAYPOINT) ? missionItem().param4() : qQNaN();
+    return command() == MAV_CMD_NAV_WAYPOINT ? missionItem().param4() : qQNaN();
 }
 
 void SimpleMissionItem::_possibleVehicleYawChanged(void)
@@ -983,8 +983,7 @@ void SimpleMissionItem::_updateOptionalSections(void)
 
     _cameraSection = new CameraSection(_masterController, this);
     _speedSection = new SpeedSection(_masterController, this);
-    if (static_cast<MAV_CMD>(command()) == MAV_CMD_NAV_WAYPOINT ||
-        static_cast<MAV_CMD>(command()) == MAV_CMD_NAV_SPLINE_WAYPOINT) {   // TTS: Target
+    if (static_cast<MAV_CMD>(command()) == MAV_CMD_NAV_WAYPOINT) {
         _cameraSection->setAvailable(false);
         _speedSection->setAvailable(true);
     }

@@ -139,21 +139,10 @@ function _parseVisualItem(item, rawIndex, homeAltMSL) {
         isValid = false
     }
 
-    // ── Extract and normalize altitude to AMSL ──
+    // ── Extract altitude — AMSL always (Project Rule #3) ──
     if (item.altitude !== undefined && item.altitude.value !== undefined) {
-        var altValue = item.altitude.value
-        var altFrame = item.altitudeFrame
-
-        // QGC AltitudeFrame enum: 0 = Relative, 1 = AMSL, 2 = AboveTerrain
-        if (altFrame === 1) {
-            // Already AMSL
-            altMSL = altValue
-            altRel = altValue - homeAltMSL
-        } else {
-            // Relative to home (default)
-            altRel = altValue
-            altMSL = homeAltMSL + altValue
-        }
+        altMSL = item.altitude.value
+        altRel = altMSL - homeAltMSL
     }
 
     // ── Home special case ──
@@ -593,50 +582,82 @@ function validate(relationships, structure, limits, points) {
     var findings = []
     _validateClimbAngle(relationships.climbs, findings)
     _validateWP3Distance(points, structure, findings)
+    _validateTakeoffSpacing(points, findings)
     return findings
 }
 
-// ── RULE 1: Climb/Descent Angle ──
-// > 5°  = CRITICAL
-// > 2.5° and <= 5° = WARNING
-// <= 2.5° = PASS
+// ── RULE 3: Takeoff to first WP minimum 500m ──
+function _validateTakeoffSpacing(points, findings) {
+    var takeoffPoint = null
+    var firstWP = null
+    for (var i = 0; i < points.length; i++) {
+        if (points[i].type === "TAKEOFF" && points[i].isValid) {
+            takeoffPoint = points[i]
+        } else if (takeoffPoint && points[i].isNavigation && points[i].isValid && points[i].type !== "HOME" && points[i].type !== "TAKEOFF") {
+            firstWP = points[i]
+            break
+        }
+    }
+    if (takeoffPoint && firstWP) {
+        var dist = _haversineDistance(takeoffPoint.lat, takeoffPoint.lon, firstWP.lat, firstWP.lon)
+        if (dist < 500) {
+            findings.push(_finding("CRITICAL", "SPACING",
+                "WP" + firstWP.displayIndex + " too close to Takeoff: " + dist.toFixed(0) + "m",
+                [takeoffPoint.displayIndex, firstWP.displayIndex],
+                "Distance from Takeoff to WP" + firstWP.displayIndex + " is " + dist.toFixed(0) + "m. Minimum: 500m.",
+                "Insufficient distance after takeoff for safe climb.",
+                "Move WP" + firstWP.displayIndex + " at least 500m from Takeoff",
+                "Mission requirement: >= 500m"))
+        } else {
+            findings.push(_finding("NOTICE", "SPACING",
+                "Takeoff spacing OK: " + dist.toFixed(0) + "m",
+                [takeoffPoint.displayIndex, firstWP.displayIndex],
+                "Distance from Takeoff to WP" + firstWP.displayIndex + " is " + dist.toFixed(0) + "m (min: 500m).",
+                "No impact.",
+                "No action required", ""))
+        }
+    }
+}
+
+// ── TWO RULES: Climb max +8°, Descent max -18° ──
 function _validateClimbAngle(climbs, findings) {
     var failCount = 0
     for (var i = 0; i < climbs.length; i++) {
         var c = climbs[i]
         var angle = c.gradient  // absolute angle in degrees
 
-        if (angle > 5.0) {
+        if (c.direction === "CLIMB" && angle > 8.0) {
             failCount++
             findings.push(_finding("CRITICAL", "GEOMETRY",
-                c.direction + " angle " + angle.toFixed(1) + "° exceeds 5° limit: WP " + c.fromIndex + " → " + c.toIndex,
+                "CLIMB angle +" + angle.toFixed(1) + "° exceeds +8° limit: WP " + c.fromIndex + " → " + c.toIndex,
                 [c.fromIndex, c.toIndex],
-                angle.toFixed(1) + "° " + c.direction.toLowerCase() + " angle. Maximum allowed: 5.0°. " +
-                "Altitude change: " + Math.abs(c.altitudeChange).toFixed(0) + "m.",
-                "Aircraft cannot safely " + c.direction.toLowerCase() + " at this angle. Mission will fail.",
-                "Increase horizontal distance between waypoints or reduce altitude change",
-                "Mission requirement: angle <= 5.0°"))
-        } else if (angle > 2.5) {
+                "+" + angle.toFixed(1) + "° climb angle. Maximum allowed: +8.0°. " +
+                "Altitude change: +" + Math.abs(c.altitudeChange).toFixed(0) + "m.",
+                "Aircraft cannot safely climb at this angle.",
+                "Increase horizontal distance between waypoints or reduce altitude gain",
+                "Mission requirement: climb <= +8.0°"))
+        } else if (c.direction === "DESCENT" && angle > 18.0) {
             failCount++
-            findings.push(_finding("WARNING", "GEOMETRY",
-                c.direction + " angle " + angle.toFixed(1) + "° exceeds 2.5° ideal: WP " + c.fromIndex + " → " + c.toIndex,
+            findings.push(_finding("CRITICAL", "GEOMETRY",
+                "DESCENT angle -" + angle.toFixed(1) + "° exceeds -18° limit: WP " + c.fromIndex + " → " + c.toIndex,
                 [c.fromIndex, c.toIndex],
-                angle.toFixed(1) + "° " + c.direction.toLowerCase() + " angle. Recommended maximum: 2.5°. " +
-                "Altitude change: " + Math.abs(c.altitudeChange).toFixed(0) + "m.",
-                "Steep angle may cause energy management issues.",
-                "Increase horizontal distance or reduce altitude change to bring angle below 2.5°",
-                "Mission recommendation: angle <= 2.5°"))
+                "-" + angle.toFixed(1) + "° descent angle. Maximum allowed: -18.0°. " +
+                "Altitude change: -" + Math.abs(c.altitudeChange).toFixed(0) + "m.",
+                "Aircraft cannot safely descend at this angle.",
+                "Increase horizontal distance between waypoints or reduce altitude drop",
+                "Mission requirement: descent <= -18.0°"))
         }
     }
     if (failCount === 0) {
         if (climbs.length > 0) {
-            var maxAngle = 0
+            var maxClimb = 0, maxDescent = 0
             for (var j = 0; j < climbs.length; j++) {
-                if (climbs[j].gradient > maxAngle) maxAngle = climbs[j].gradient
+                if (climbs[j].direction === "CLIMB" && climbs[j].gradient > maxClimb) maxClimb = climbs[j].gradient
+                if (climbs[j].direction === "DESCENT" && climbs[j].gradient > maxDescent) maxDescent = climbs[j].gradient
             }
             findings.push(_finding("NOTICE", "GEOMETRY",
-                "All climb/descent angles within limits (max: " + maxAngle.toFixed(1) + "°)",
-                [], "All segment angles are below 2.5°. No steep climbs or descents.",
+                "Angles OK (+" + maxClimb.toFixed(1) + "° / -" + maxDescent.toFixed(1) + "°)",
+                [], "Climb below +8°, descent below -18°.",
                 "No impact — all angles are safe.",
                 "No action required", ""))
         } else {
@@ -675,12 +696,12 @@ function _validateWP3Distance(points, structure, findings) {
                 "Mission requirement: WP3 >= 5 km"))
         } else {
             findings.push(_finding("NOTICE", "CONSISTENCY",
-                "WP3 distance OK: " + (distWP3 / 1000).toFixed(1) + " km from Home",
+                "WP3 OK: " + (distWP3 / 1000).toFixed(1) + " km",
                 [3],
-                "WP3 is " + (distWP3 / 1000).toFixed(1) + " km from Home. Minimum required: 5 km. Passed.",
-                "No impact — standoff distance requirement met.",
+                "WP3 is " + (distWP3 / 1000).toFixed(1) + " km from Home (min: 5 km).",
+                "No impact.",
                 "No action required",
-                "Mission requirement: WP3 >= 5 km"))
+                ""))
         }
     }
 }
@@ -1108,6 +1129,7 @@ function generateReport(findings, assessments, geometrySummary, structure, limit
         totalDistance:       geometrySummary.totalDistance,
         estimatedTime:      estimatedTime,
         maxAltitude:        geometrySummary.maxAltitude,
+        minAltitude:        geometrySummary.minAltitude,
         maxRange:           geometrySummary.maxDistanceFromHome,
         totalClimb:         geometrySummary.totalClimb,
         totalDescent:       geometrySummary.totalDescent,

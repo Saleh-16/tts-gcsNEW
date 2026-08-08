@@ -192,7 +192,7 @@
             "specifiesCoordinate": true,
             "isLandCommand": true,
             "friendlyEdit": true,
-            "category": "Advanced",
+            "category": "Basic",
             "param1": {
                 "label": "Abort Alt",
                 "units": "m",
@@ -340,12 +340,12 @@
         },
         {
             "id": 82,
-            "rawName": "MAV_CMD_NAV_WAYPOINT",
-            "friendlyName": "Target",
-            "description": " Send the vehicle to a target position",
+            "rawName": "MAV_CMD_NAV_SPLINE_WAYPOINT",
+            "friendlyName": "Spline waypoint",
+            "description": "Travel to a position in 3D space using spline path.",
             "specifiesCoordinate": true,
             "friendlyEdit": true,
-            "category": "Basic",
+            "category": "Advanced",
             "param1": {
                 "label": "Hold",
                 "units": "secs",
