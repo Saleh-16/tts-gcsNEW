@@ -459,69 +459,7 @@ Item {
                                 }
                             }
                         }
-                        Rectangle {
-                            width: parent.width
-                            height: rdCol.height + ScreenTools.defaultFontPixelHeight * 0.8
-                            radius: ScreenTools.defaultFontPixelWidth * 0.4
-                            border.width: 1
-                            visible: _hasResults
-                            color: {
-                                if (!_report) return "transparent"
-                                if (_report.status === "READY")                 return Qt.rgba(0, 1, 0.53, 0.04)
-                                if (_report.status === "READY_WITH_ADVISORIES") return Qt.rgba(1, 0.72, 0, 0.04)
-                                return Qt.rgba(1, 0.13, 0.27, 0.04)
-                            }
-                            border.color: {
-                                if (!_report) return qgcPal.colorGrey
-                                if (_report.status === "READY")                 return Qt.rgba(0, 1, 0.53, 0.25)
-                                if (_report.status === "READY_WITH_ADVISORIES") return Qt.rgba(1, 0.72, 0, 0.25)
-                                return Qt.rgba(1, 0.13, 0.27, 0.25)
-                            }
-                            Column {
-                                id: rdCol
-                                width: parent.width - ScreenTools.defaultFontPixelWidth * 1.5
-                                anchors.centerIn: parent
-                                spacing: ScreenTools.defaultFontPixelHeight * 0.25
-                                QGCLabel {
-                                    text: _readinessText()
-                                    font.pointSize: ScreenTools.defaultFontPointSize * 1.05
-                                    font.bold: true
-                                    color: {
-                                        if (!_report) return qgcPal.text
-                                        if (_report.status === "READY")                 return qgcPal.colorGreen
-                                        if (_report.status === "READY_WITH_ADVISORIES") return qgcPal.colorYellow
-                                        return qgcPal.colorRed
-                                    }
-                                }
-                                QGCLabel {
-                                    text: _countsText()
-                                    font.pointSize: ScreenTools.defaultFontPointSize * 0.82
-                                    color: qgcPal.colorGrey
-                                }
-                                Grid {
-                                    columns: 2
-                                    columnSpacing: ScreenTools.defaultFontPixelWidth * 2
-                                    rowSpacing: ScreenTools.defaultFontPixelHeight * 0.15
-                                    visible: _report !== null
-                                    Row { spacing: ScreenTools.defaultFontPixelWidth * 0.3
-                                        QGCLabel { text: _report ? _fmtDist(_report.stats.totalDistance) : ""; font.pointSize: ScreenTools.defaultFontPointSize * 0.95; font.bold: true }
-                                        QGCLabel { text: qsTr("distance");  font.pointSize: ScreenTools.defaultFontPointSize * 0.75; color: qgcPal.colorGrey }
-                                    }
-                                    Row { spacing: ScreenTools.defaultFontPixelWidth * 0.3
-                                        QGCLabel { text: _report ? _report.stats.maxAltitude.toFixed(0) + "m" : ""; font.pointSize: ScreenTools.defaultFontPointSize * 0.95; font.bold: true }
-                                        QGCLabel { text: qsTr("max alt");   font.pointSize: ScreenTools.defaultFontPointSize * 0.75; color: qgcPal.colorGrey }
-                                    }
-                                    Row { spacing: ScreenTools.defaultFontPixelWidth * 0.3
-                                        QGCLabel { text: _report ? _report.stats.minAltitude.toFixed(0) + "m" : ""; font.pointSize: ScreenTools.defaultFontPointSize * 0.95; font.bold: true }
-                                        QGCLabel { text: qsTr("min alt");   font.pointSize: ScreenTools.defaultFontPointSize * 0.75; color: qgcPal.colorGrey }
-                                    }
-                                    Row { spacing: ScreenTools.defaultFontPixelWidth * 0.3
-                                        QGCLabel { text: _report ? _fmtDist(_report.stats.maxRange) : ""; font.pointSize: ScreenTools.defaultFontPointSize * 0.95; font.bold: true }
-                                        QGCLabel { text: qsTr("max range"); font.pointSize: ScreenTools.defaultFontPointSize * 0.75; color: qgcPal.colorGrey }
-                                    }
-                                }
-                            }
-                        }
+                        // ── Responsibility box ──
                         Rectangle {
                             width: parent.width
                             height: respContent.height + ScreenTools.defaultFontPixelHeight * 0.8

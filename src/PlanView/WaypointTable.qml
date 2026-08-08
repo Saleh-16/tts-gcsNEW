@@ -32,6 +32,7 @@ Rectangle {
     // TTS: العروض الافتراضية مبنية على _rowH (ارتفاع الصف المضبوط) لا على _u،
     // لأن عرض الخط (defaultFontPixelWidth) يختلف بين الأجهزة. النِسب مقيسة من
     // صورة المستخدم (ارتفاع الصف ≈ 42px) فتطلع بالحجم الصحيح على أي شاشة.
+    // قابلة للسحب اليدوي بالكامل من رأس كل عمود (مقبض السحب في HeadCell).
     property real colSeq:    _rowH * 0.55    // #          (~23px)
     property real colType:   _rowH * 4.75    // COMMAND    (~200px) — عمود التغيير
     property real colLat:    _rowH * 3.6     // LAT        (~151px)
@@ -44,7 +45,9 @@ Rectangle {
     property real colAct:    _rowH * 3.6     // ACT        (~151px)
     readonly property real _totalW: colSeq + colType + colLat + colLon + colAlt +
                                      colGr + colAn + colDp + colAz + colAct +
-                                     (_extraFacts.length * colParam)
+                                     _extraFacts.reduce(function(sum, f) {
+                                         return sum + wpRoot._paramColW(f ? f.name : "")
+                                     }, 0)
     color:        cBg
     border.color: cBorder
     border.width: 1
@@ -52,6 +55,9 @@ Rectangle {
     // TTS: نفس ترتيب/مجموعة الحقول في SimpleItemEditor.qml الأصلي بـ QGC:
     //   comboboxFacts ← ثم → textFieldFacts ← ثم → nanFacts
     //   (النسخة الأساسية فقط، بدون قوائم Advanced — مطابقة لتبويب QGC الأساسي).
+    // استثناء صريح بطلب المستخدم: "Abort Alt" و "Precision Land" (خاصتَي أمر
+    // Land) لا تُعرض كأعمدة — تبقى بقية براميترات أي أمر آخر كما هي.
+    readonly property var _hiddenFactNames: ["Abort Alt", "Precision Land"]
     function _dynamicFacts(item) {
         if (!item) return []
         var out = []
@@ -61,7 +67,7 @@ Rectangle {
             if (!model || model.count === undefined) continue
             for (var i = 0; i < model.count; i++) {
                 var f = model.get(i)
-                if (f) out.push(f)
+                if (f && wpRoot._hiddenFactNames.indexOf(f.name) === -1) out.push(f)
             }
         }
         return out
@@ -77,7 +83,22 @@ Rectangle {
     //   للأوامر الإحداثية — مؤكد من SimpleMissionItem.cc (params 5/6/7 بلا showUI).
     //   كل صف يملأ العمود بمطابقة اسم الـFact فقط، فلا يختلط أمر بأمر.
     property int  _selRev: 0            // يزيد عند تغيّر أمر البند المختار
-    property real colParam: _rowH * 3.3     // عرض عمود براميتر ديناميكي (~139px)
+    property real colParam: _rowH * 3.3     // عرض عمود براميتر ديناميكي (~139px) — الافتراضي لو ما اتسحب
+    // TTS: عرض مستقل لكل عمود براميتر ديناميكي، مخزّن بـ"اسم" الـFact (مو
+    //      موقعه) — عشان لو رجع نفس البراميتر يظهر بصف/أمر ثاني يحتفظ بنفس
+    //      العرض اللي سحبته يدوياً له. الأعمدة اللي ما اتسحبت تاخذ colParam.
+    property var colParamWidthsByName: ({})
+    function _paramColW(name) {
+        return (name && wpRoot.colParamWidthsByName[name] !== undefined)
+               ? wpRoot.colParamWidthsByName[name] : wpRoot.colParam
+    }
+    function _setParamColW(name, w) {
+        if (!name) return
+        var obj = {}
+        for (var k in wpRoot.colParamWidthsByName) obj[k] = wpRoot.colParamWidthsByName[k]
+        obj[name] = w
+        wpRoot.colParamWidthsByName = obj   // إعادة تعيين الكائن كامل عشان binding يتحدّث
+    }
     readonly property var _extraFacts: {
         wpRoot._selRev                  // dependency: أمر البند تغيّر
         var it = wpRoot._curItem        // dependency: البند المختار تغيّر
@@ -271,6 +292,11 @@ Rectangle {
     component HeadCell: Rectangle {
         property string label: ""
         property string colName: ""
+        // TTS: آلية سحب عامة إضافية (لأعمدة البراميترات الديناميكية، وزنها
+        //      مو Property ثابتة بـ wpRoot بل مخزّنة باسم الـFact). لو مُمرَّرة
+        //      تُستخدم بدل colName.
+        property var getWidthFn: null
+        property var setWidthFn: null
         height: wpRoot._rowH * 0.85
         color:  "transparent"
         Rectangle { anchors.right: parent.right; anchors.top: parent.top; anchors.bottom: parent.bottom; width: 1; color: wpRoot.cBorder }
@@ -289,8 +315,9 @@ Rectangle {
         }
         MouseArea {
             id: resizeMa
-            visible:      colName !== ""
-            enabled:      colName !== ""
+            readonly property bool _resizable: colName !== "" || setWidthFn !== null
+            visible:      _resizable
+            enabled:      _resizable
             width:        wpRoot._u * 0.6
             anchors.right: parent.right
             anchors.top:   parent.top
@@ -307,7 +334,7 @@ Rectangle {
                 resizeMa._active = true
                 var g = resizeMa.mapToItem(null, mouse.x, mouse.y)
                 _startGX = g.x
-                _startW  = wpRoot[colName]
+                _startW  = colName !== "" ? wpRoot[colName] : getWidthFn()
             }
             onReleased: resizeMa._active = resizeMa.containsMouse
             onCanceled: resizeMa._active = false
@@ -315,7 +342,9 @@ Rectangle {
                 if (!pressed) return
                 var g = resizeMa.mapToItem(null, mouse.x, mouse.y)
                 var delta = g.x - _startGX
-                wpRoot[colName] = Math.max(wpRoot._u * 2.5, _startW + delta)
+                var newW  = Math.max(wpRoot._u * 2.5, _startW + delta)
+                if (colName !== "") wpRoot[colName] = newW
+                else setWidthFn(newW)
             }
             Rectangle {
                 anchors.fill: parent
@@ -561,10 +590,17 @@ Rectangle {
                         HeadCell { width: wpRoot.colLat;    label: wpRoot._coordHeader(0);      colName: "colLat" }
                         HeadCell { width: wpRoot.colLon;    label: wpRoot._coordHeader(1);      colName: "colLon" }
                         HeadCell { width: wpRoot.colAlt;    label: wpRoot._curAltHeaderLabel(); colName: "colAlt" }
-                        // ── أعمدة براميترات الأمر المختار (ديناميكية) ──
+                        // ── أعمدة براميترات الأمر المختار (ديناميكية) — كل
+                        //    عمود يسحب لحاله، محفوظ باسم البراميتر ──
                         Repeater {
                             model: wpRoot._extraFacts
-                            HeadCell { width: wpRoot.colParam; label: modelData ? modelData.name : "" }
+                            HeadCell {
+                                readonly property string _pn: modelData ? modelData.name : ""
+                                width: wpRoot._paramColW(_pn)
+                                label: _pn
+                                getWidthFn: function() { return wpRoot._paramColW(_pn) }
+                                setWidthFn: function(w) { wpRoot._setParamColW(_pn, w) }
+                            }
                         }
                         HeadCell { width: wpRoot.colAct;    label: "ACT";           colName: "colAct"  }
                         HeadCell { width: wpRoot.colGr;     label: "GRAD";      colName: "colGr"   }
@@ -722,7 +758,8 @@ Rectangle {
                             Repeater {
                                 model: wpRoot._extraFacts
                                 Rectangle {
-                                    width:  wpRoot.colParam
+                                    id:     pCell
+                                    width:  wpRoot._paramColW(_pname)
                                     height: wpRoot._rowH
                                     color:  pTi.activeFocus ? Qt.rgba(0, 1, 0.53, 0.10) : "transparent"
                                     Rectangle { anchors.right: parent.right; anchors.top: parent.top; anchors.bottom: parent.bottom; width: 1; color: wpRoot.cBorder }
@@ -751,22 +788,54 @@ Rectangle {
                                                    : wpRoot._fs
                                         }
                                         font.family:         "monospace"
-                                        color:               parent._rf ? wpRoot.cOrange : wpRoot.cGrey
+                                        color:               pCell._rf ? wpRoot.cOrange : wpRoot.cGrey
                                         selectByMouse:       true
-                                        readOnly:            !parent._rf || parent._isEnum
+                                        readOnly:            !pCell._rf || pCell._isEnum
                                         clip:                true
                                         // TTS: nanFacts غير المُغيّرة قيمتها NaN → تنعرض "—" مثل QGC
                                         text: {
-                                            if (!parent._rf) return "—"
-                                            if (!parent._isEnum && isNaN(parent._rf.rawValue)) return "—"
-                                            return parent._rf.enumOrValueString
+                                            if (!pCell._rf) return "—"
+                                            if (!pCell._isEnum && isNaN(pCell._rf.rawValue)) return "—"
+                                            return pCell._rf.enumOrValueString
                                         }
                                         onEditingFinished: {
-                                            if (parent._rf && !parent._isEnum) {
+                                            if (pCell._rf && !pCell._isEnum) {
                                                 var v = parseFloat(text)
-                                                if (!isNaN(v)) parent._rf.rawValue = v
+                                                if (!isNaN(v)) pCell._rf.rawValue = v
                                             }
                                             focus = false
+                                        }
+                                    }
+                                    // TTS: خانة enum (Center/Tangent وغيرها) تُعدَّل عبر قائمة منسدلة
+                                    // بدل الكتابة النصية — مرتبطة بـ Fact.enumIndex (مؤكد من Fact.h:
+                                    // Q_PROPERTY(int enumIndex READ enumIndex WRITE setEnumIndex)).
+                                    MouseArea {
+                                        anchors.fill: parent
+                                        visible: pCell._isEnum
+                                        enabled: pCell._isEnum
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: {
+                                            wpRoot.forceActiveFocus()
+                                            enumMenu.open()
+                                        }
+                                    }
+                                    Text {
+                                        visible: pCell._isEnum
+                                        anchors.right: parent.right
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        anchors.rightMargin: wpRoot._u * 0.3
+                                        text: "▾"
+                                        font.pixelSize: wpRoot._fs * 0.7
+                                        color: wpRoot.cGrey
+                                    }
+                                    Menu {
+                                        id: enumMenu
+                                        Repeater {
+                                            model: pCell._isEnum && pCell._rf ? pCell._rf.enumStrings : []
+                                            MenuItem {
+                                                text: modelData
+                                                onTriggered: pCell._rf.enumIndex = index
+                                            }
                                         }
                                     }
                                 }

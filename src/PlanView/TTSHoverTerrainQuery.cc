@@ -1,5 +1,4 @@
 #include "TTSHoverTerrainQuery.h"
-
 #include <QtQml>
 
 TTSHoverTerrainQuery::TTSHoverTerrainQuery(QObject *parent)
@@ -17,7 +16,7 @@ TTSHoverTerrainQuery::TTSHoverTerrainQuery(QObject *parent)
 
 TTSHoverTerrainQuery::~TTSHoverTerrainQuery()
 {
-    // _query مُنشأ بـ this كـ parent، فـ Qt يحذفه تلقائياً — لا حاجة لحذف يدوي
+   // _query مُنشأ بـ this كـ parent، فـ Qt يحذفه تلقائياً — لا حاجة لحذف يدوي
 }
 
 void TTSHoverTerrainQuery::requestAltitude(double latitude, double longitude)
@@ -25,12 +24,35 @@ void TTSHoverTerrainQuery::requestAltitude(double latitude, double longitude)
     if (!_query) {
         return;
     }
+
     QGeoCoordinate coord(latitude, longitude);
     if (!coord.isValid()) {
         emit terrainAltitudeReceived(false, 0.0);
         return;
     }
-    _query->requestData(QList<QGeoCoordinate>{coord});
+
+            // TTS: أولاً نجرب القراءة المتزامنة من الكاش المحلي — لو متوفرة، نرجعها
+            // فوراً بدون انتظار أي استعلام شبكة (نفس سلوك Mission Planner للمناطق
+            // اللي زارها المستخدم قبل كذا). التوقيع مؤكد من TerrainQuery.h:
+            //   static bool getAltitudesForCoordinates(const QList<QGeoCoordinate> &coordinates,
+            //                                           QList<double> &altitudes, bool &error);
+            // ترجع true فقط لو القيم متوفرة فوراً من الكاش (تحقق من error كمان).
+    QList<QGeoCoordinate> coords{coord};
+    QList<double> altitudes;
+    bool error = false;
+    const bool immediateResult = TerrainAtCoordinateQuery::getAltitudesForCoordinates(coords, altitudes, error);
+
+    if (immediateResult) {
+        // متوفرة بالكاش — رد فوري بدون تأخير شبكة
+        const bool success = !error && !altitudes.isEmpty();
+        const double alt = success ? altitudes.first() : 0.0;
+        emit terrainAltitudeReceived(success, alt);
+        return;
+    }
+
+            // غير متوفرة بالكاش — نرجع لأسلوب الاستعلام غير المتزامن (بطيء أول مرة
+            // بس، وبعدها تنزل بالكاش وتصير فورية بالمرات الجاية لنفس المنطقة)
+    _query->requestData(coords);
 }
 
 // Register TTSHoverTerrainQuery as a QML type at application startup —
