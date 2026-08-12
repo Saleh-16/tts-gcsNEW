@@ -29,20 +29,16 @@ Rectangle {
     readonly property color cGrey:   "#4A6070"
     readonly property color cRed:    "#FF2244"
     readonly property color cOrange: "#FF6600"
-    // TTS: العروض الافتراضية مبنية على _rowH (ارتفاع الصف المضبوط) لا على _u،
-    // لأن عرض الخط (defaultFontPixelWidth) يختلف بين الأجهزة. النِسب مقيسة من
-    // صورة المستخدم (ارتفاع الصف ≈ 42px) فتطلع بالحجم الصحيح على أي شاشة.
-    // قابلة للسحب اليدوي بالكامل من رأس كل عمود (مقبض السحب في HeadCell).
-    property real colSeq:    _rowH * 0.55    // #          (~23px)
-    property real colType:   _rowH * 4.75    // COMMAND    (~200px) — عمود التغيير
-    property real colLat:    _rowH * 3.6     // LAT        (~151px)
-    property real colLon:    _rowH * 4.4     // LON        (~185px)
-    property real colAlt:    _rowH * 5.05    // ALT (AMSL) (~212px)
-    property real colGr:     _rowH * 2.25    // GRAD       (~95px)
-    property real colAn:     _rowH * 2.2     // ANGLE      (~92px)
-    property real colAz:     _rowH * 1.5     // AZ         (~63px)
-    property real colDp:     _rowH * 3.5     // DIST prev  (~147px)
-    property real colAct:    _rowH * 3.6     // ACT        (~151px)
+    property real colSeq:    _rowH * 0.55
+    property real colType:   _rowH * 4.75
+    property real colLat:    _rowH * 3.6
+    property real colLon:    _rowH * 4.4
+    property real colAlt:    _rowH * 5.05
+    property real colGr:     _rowH * 2.25
+    property real colAn:     _rowH * 2.2
+    property real colAz:     _rowH * 1.5
+    property real colDp:     _rowH * 3.5
+    property real colAct:    _rowH * 3.6
     readonly property real _totalW: colSeq + colType + colLat + colLon + colAlt +
                                      colGr + colAn + colDp + colAz + colAct +
                                      _extraFacts.reduce(function(sum, f) {
@@ -52,11 +48,6 @@ Rectangle {
     border.color: cBorder
     border.width: 1
     clip:         true
-    // TTS: نفس ترتيب/مجموعة الحقول في SimpleItemEditor.qml الأصلي بـ QGC:
-    //   comboboxFacts ← ثم → textFieldFacts ← ثم → nanFacts
-    //   (النسخة الأساسية فقط، بدون قوائم Advanced — مطابقة لتبويب QGC الأساسي).
-    // استثناء صريح بطلب المستخدم: "Abort Alt" و "Precision Land" (خاصتَي أمر
-    // Land) لا تُعرض كأعمدة — تبقى بقية براميترات أي أمر آخر كما هي.
     readonly property var _hiddenFactNames: ["Abort Alt", "Precision Land"]
     function _dynamicFacts(item) {
         if (!item) return []
@@ -73,20 +64,9 @@ Rectangle {
         return out
     }
     readonly property var _curItem: _mc ? _mc.currentPlanViewItem : null
-    // TTS: صيغة الإحداثيات المشتركة — تُقرأ من الخريطة الممرَّرة (map)
     readonly property int _coordFmt: QGroundControl.settingsManager.appSettings.coordinateFormat.rawValue
-
-    // TTS: ═══ أعمدة براميترات ديناميكية حسب الأمر المختار ═══════════════════
-    //   LAT / LON / ALT تبقى أعمدة ثابتة. نضيف عموداً لكل براميتر يخص الأمر
-    //   المختار (Loiter Time / Radius / Speed / Throttle / Type ...). facts
-    //   الإحداثي (Lat/Lon/Alt) مستثناة أصلاً من textFieldFacts/comboboxFacts
-    //   للأوامر الإحداثية — مؤكد من SimpleMissionItem.cc (params 5/6/7 بلا showUI).
-    //   كل صف يملأ العمود بمطابقة اسم الـFact فقط، فلا يختلط أمر بأمر.
-    property int  _selRev: 0            // يزيد عند تغيّر أمر البند المختار
-    property real colParam: _rowH * 3.3     // عرض عمود براميتر ديناميكي (~139px) — الافتراضي لو ما اتسحب
-    // TTS: عرض مستقل لكل عمود براميتر ديناميكي، مخزّن بـ"اسم" الـFact (مو
-    //      موقعه) — عشان لو رجع نفس البراميتر يظهر بصف/أمر ثاني يحتفظ بنفس
-    //      العرض اللي سحبته يدوياً له. الأعمدة اللي ما اتسحبت تاخذ colParam.
+    property int  _selRev: 0
+    property real colParam: _rowH * 3.3
     property var colParamWidthsByName: ({})
     function _paramColW(name) {
         return (name && wpRoot.colParamWidthsByName[name] !== undefined)
@@ -97,20 +77,18 @@ Rectangle {
         var obj = {}
         for (var k in wpRoot.colParamWidthsByName) obj[k] = wpRoot.colParamWidthsByName[k]
         obj[name] = w
-        wpRoot.colParamWidthsByName = obj   // إعادة تعيين الكائن كامل عشان binding يتحدّث
+        wpRoot.colParamWidthsByName = obj
     }
     readonly property var _extraFacts: {
-        wpRoot._selRev                  // dependency: أمر البند تغيّر
-        var it = wpRoot._curItem        // dependency: البند المختار تغيّر
+        wpRoot._selRev
+        var it = wpRoot._curItem
         return it ? wpRoot._dynamicFacts(it) : []
     }
-    // ترويسة عمودَي الإحداثي — ثابتة LAT/LON (أو EASTING/NORTHING/MGRS حسب الصيغة)
     function _coordHeader(slot) {
         if (wpRoot._coordFmt === 1) return slot === 0 ? "EASTING" : "NORTHING"
         if (wpRoot._coordFmt === 2) return slot === 0 ? "MGRS" : ""
         return slot === 0 ? "LAT" : "LON"
     }
-    // يجيب Fact بنفس الاسم من بند صف معيّن (مطابقة بالاسم لا بالموقع)
     function _rowFactByName(item, name) {
         if (!item || !name) return null
         var facts = wpRoot._dynamicFacts(item)
@@ -118,7 +96,6 @@ Rectangle {
             if (facts[i] && facts[i].name === name) return facts[i]
         return null
     }
-
     function _curFieldName(slotIndex) {
         if (!_curItem || _curItem.specifiesCoordinate) {
             if (wpRoot._coordFmt === 1) return slotIndex === 0 ? "EASTING" : "NORTHING"
@@ -128,8 +105,6 @@ Rectangle {
         var facts = _dynamicFacts(_curItem)
         return facts[slotIndex] ? facts[slotIndex].name : ""
     }
-    // TTS: تنسيق خلية إحداثي حسب الصيغة. ctl = TransformPositionController
-    //      خاص بالصف (يملأ نفسه تلقائياً من coordinate بدوال QGC).
     function _fmtCoordSlot(ctl, coord, slot) {
         if (!coord || !coord.isValid) return "-.-"
         if (wpRoot._coordFmt === 1) {
@@ -196,11 +171,6 @@ Rectangle {
     function _remove(idx) {
         if (_mc && idx > 0 && typeof _mc.removeVisualItem === "function") _mc.removeVisualItem(idx)
     }
-    // TTS: ما فيه دالة "تحريك/إعادة ترتيب" جاهزة بـ MissionController (مؤكد
-    // بالـ grep — القائمة الكاملة لدوال Q_INVOKABLE ما فيها Move/Reorder/Swap).
-    // الحل: حذف + إعادة إضافة بنفس الإحداثيات والارتفاع ونوع الإطار — محصور
-    // بأمان على Waypoint العادي بس (command === 16، MAV_CMD_NAV_WAYPOINT)
-    // عشان ما نفقد بيانات خاصة بأنواع تانية (Takeoff/Land/ROI).
     function _move(idx, newIdx) {
         if (!_mc || !_items) return
         if (newIdx < 1 || newIdx >= _items.count) return
@@ -232,7 +202,6 @@ Rectangle {
         height: wpRoot._rowH
         color:  ti.activeFocus ? Qt.rgba(0, 1, 0.53, 0.10) : "transparent"
         Rectangle { anchors.right: parent.right; anchors.top: parent.top; anchors.bottom: parent.bottom; width: 1; color: wpRoot.cBorder }
-        // TTS: يقيس عرض النص على الحجم الأساسي عشان نصغّره لو ما فِت
         TextMetrics {
             id: tiTM
             font.family:    "monospace"
@@ -247,7 +216,6 @@ Rectangle {
             verticalAlignment:   TextInput.AlignVCenter
             horizontalAlignment: TextInput.AlignHCenter
             font.family:         "monospace"
-            // TTS: يصغّر الخط تلقائياً لو الرقم أعرض من الخلية (يفِت داخلها)
             font.pixelSize: {
                 var avail = width - wpRoot._u
                 var need  = tiTM.advanceWidth
@@ -283,7 +251,6 @@ Rectangle {
             font.pixelSize:      wpRoot._fs
             font.family:         "monospace"
             color:               parent.textColor
-            // TTS: يصغّر الخط ليفِت داخل الخلية بدل ما ينقطع
             fontSizeMode:        Text.HorizontalFit
             minimumPixelSize:    Math.max(6, wpRoot._fs * 0.55)
             elide:               Text.ElideRight
@@ -292,9 +259,6 @@ Rectangle {
     component HeadCell: Rectangle {
         property string label: ""
         property string colName: ""
-        // TTS: آلية سحب عامة إضافية (لأعمدة البراميترات الديناميكية، وزنها
-        //      مو Property ثابتة بـ wpRoot بل مخزّنة باسم الـFact). لو مُمرَّرة
-        //      تُستخدم بدل colName.
         property var getWidthFn: null
         property var setWidthFn: null
         height: wpRoot._rowH * 0.85
@@ -353,17 +317,13 @@ Rectangle {
             }
         }
     }
-    // ── TTS: حاجز يمنع أحداث الماوس من التسرب للخريطة تحت الجدول ──────────
     MouseArea {
         anchors.fill: parent
         acceptedButtons: Qt.AllButtons
         hoverEnabled: true
-        // يمسك الضغط فيمنع السحب (drag) من تحريك الخريطة
         onPressed: function(mouse) { mouse.accepted = true }
-        // يمسك السكرول فيمنع الزوم على الخريطة
         onWheel: function(wheel) { wheel.accepted = true }
     }
-    // TTS: يعيد حساب الأعمدة الديناميكية إذا تغيّر أمر البند المختار (عبر الدايلوق)
     Connections {
         target: wpRoot._curItem
         ignoreUnknownSignals: true
@@ -393,6 +353,103 @@ Rectangle {
             anchors.right:          parent.right
             anchors.rightMargin:    wpRoot._u
             spacing:                wpRoot._u
+            // TTS: WP_LOITER_RAD — باليمين، ألوان بيضاء واضحة
+            Loader {
+                id: radLoader
+                anchors.verticalCenter: parent.verticalCenter
+                active: {
+                    var v = QGroundControl.multiVehicleManager.activeVehicle
+                    return v !== null && v !== undefined &&
+                           v.parameterManager !== null && v.parameterManager !== undefined &&
+                           v.parameterManager.parametersReady
+                }
+                sourceComponent: Component {
+                    Item {
+                        width: radRow.width
+                        height: wpRoot._rowH * 0.6
+                        property var _radFact: null
+                        FactPanelController { id: radCtl }
+                        Component.onCompleted: {
+                            if (radCtl.parameterExists(-1, "WP_LOITER_RAD"))
+                                _radFact = radCtl.getParameterFact(-1, "WP_LOITER_RAD", false)
+                        }
+                        visible: _radFact !== null
+                        Row {
+                            id: radRow
+                            spacing: wpRoot._u * 0.5
+                            Text {
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: "LOITER RAD"
+                                font.pixelSize: wpRoot._fs * 0.75
+                                font.family: "monospace"
+                                font.bold: true
+                                color: wpRoot.cWhite
+                            }
+                            Rectangle {
+                                width: wpRoot._u * 6
+                                height: wpRoot._rowH * 0.6
+                                anchors.verticalCenter: parent.verticalCenter
+                                color: "transparent"
+                                border.color: radInput.activeFocus ? wpRoot.cNeon : wpRoot.cBorder
+                                border.width: 1
+                                TextInput {
+                                    id: radInput
+                                    anchors.fill: parent
+                                    anchors.margins: wpRoot._u * 0.3
+                                    verticalAlignment: TextInput.AlignVCenter
+                                    horizontalAlignment: TextInput.AlignHCenter
+                                    font.pixelSize: wpRoot._fs * 0.8
+                                    font.family: "monospace"
+                                    color: wpRoot.cOrange
+                                    selectByMouse: true
+                                    clip: true
+                                    Component.onCompleted: {
+                                        var r = parent.parent.parent._radFact
+                                        if (r) text = r.rawValue.toFixed(0)
+                                    }
+                                }
+                            }
+                            Text {
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: "m"
+                                font.pixelSize: wpRoot._fs * 0.7
+                                font.family: "monospace"
+                                color: wpRoot.cWhite
+                            }
+                            Rectangle {
+                                width:  setTxt.implicitWidth + wpRoot._u * 1.2
+                                height: wpRoot._rowH * 0.6
+                                anchors.verticalCenter: parent.verticalCenter
+                                color:  setMa.containsMouse ? Qt.rgba(0, 1, 0.53, 0.18) : "transparent"
+                                border.color: wpRoot.cNeon
+                                border.width: 1
+                                radius: 2
+                                Text {
+                                    id: setTxt
+                                    anchors.centerIn: parent
+                                    text: "SET"
+                                    font.pixelSize: wpRoot._fs * 0.7
+                                    font.bold: true
+                                    font.family: "monospace"
+                                    color: wpRoot.cNeon
+                                }
+                                MouseArea {
+                                    id: setMa
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    onClicked: {
+                                        wpRoot.forceActiveFocus()
+                                        var fact = parent.parent.parent._radFact
+                                        if (!fact) return
+                                        var v = parseFloat(radInput.text)
+                                        if (!isNaN(v)) fact.rawValue = v
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
             Text {
                 anchors.verticalCenter: parent.verticalCenter
                 visible: wpRoot._mc && wpRoot._mc.missionTotalDistance > 0
@@ -544,7 +601,7 @@ Rectangle {
                                     anchors.verticalCenter: parent.verticalCenter
                                     text: "▾"
                                     font.pixelSize: wpRoot._fs * 0.9
-                                    color: wpRoot.cGrey
+                                    color: wpRoot.cWhite
                                 }
                             }
                             MouseArea {
@@ -590,8 +647,6 @@ Rectangle {
                         HeadCell { width: wpRoot.colLat;    label: wpRoot._coordHeader(0);      colName: "colLat" }
                         HeadCell { width: wpRoot.colLon;    label: wpRoot._coordHeader(1);      colName: "colLon" }
                         HeadCell { width: wpRoot.colAlt;    label: wpRoot._curAltHeaderLabel(); colName: "colAlt" }
-                        // ── أعمدة براميترات الأمر المختار (ديناميكية) — كل
-                        //    عمود يسحب لحاله، محفوظ باسم البراميتر ──
                         Repeater {
                             model: wpRoot._extraFacts
                             HeadCell {
@@ -602,11 +657,11 @@ Rectangle {
                                 setWidthFn: function(w) { wpRoot._setParamColW(_pn, w) }
                             }
                         }
-                        HeadCell { width: wpRoot.colAct;    label: "ACT";           colName: "colAct"  }
-                        HeadCell { width: wpRoot.colGr;     label: "GRAD";      colName: "colGr"   }
-                        HeadCell { width: wpRoot.colAn;     label: "ANGLE";     colName: "colAn"   }
-                        HeadCell { width: wpRoot.colDp;     label: "DIST prev"; colName: "colDp"   }
-                        HeadCell { width: wpRoot.colAz;     label: "AZ";        colName: "colAz"   }
+                        HeadCell { width: wpRoot.colAct;    label: "ACT";       colName: "colAct" }
+                        HeadCell { width: wpRoot.colGr;     label: "GRAD";      colName: "colGr"  }
+                        HeadCell { width: wpRoot.colAn;     label: "ANGLE";     colName: "colAn"  }
+                        HeadCell { width: wpRoot.colDp;     label: "DIST prev"; colName: "colDp"  }
+                        HeadCell { width: wpRoot.colAz;     label: "AZ";        colName: "colAz"  }
                     }
                     Rectangle { anchors.bottom: parent.bottom; anchors.left: parent.left; anchors.right: parent.right; height: 1; color: wpRoot.cNeon; opacity: 0.35 }
                 }
@@ -645,7 +700,7 @@ Rectangle {
                             EditCell {
                                 width:     wpRoot.colLat
                                 editable:  wpRoot._coordFmt === 0 && rowItem._item && rowItem._item.specifiesCoordinate
-                                textColor: (rowItem._item && rowItem._item.specifiesCoordinate) ? wpRoot.cWhite : wpRoot.cGrey
+                                textColor: (rowItem._item && rowItem._item.specifiesCoordinate) ? wpRoot.cWhite : wpRoot.cWhite
                                 TransformPositionController {
                                     id: latCtl
                                     coordinate: (rowItem._item && rowItem._item.specifiesCoordinate && rowItem._item.coordinate)
@@ -667,7 +722,7 @@ Rectangle {
                             EditCell {
                                 width:     wpRoot.colLon
                                 editable:  wpRoot._coordFmt === 0 && rowItem._item && rowItem._item.specifiesCoordinate
-                                textColor: (rowItem._item && rowItem._item.specifiesCoordinate) ? wpRoot.cWhite : wpRoot.cGrey
+                                textColor: (rowItem._item && rowItem._item.specifiesCoordinate) ? wpRoot.cWhite : wpRoot.cWhite
                                 TransformPositionController {
                                     id: lonCtl
                                     coordinate: (rowItem._item && rowItem._item.specifiesCoordinate && rowItem._item.coordinate)
@@ -706,7 +761,6 @@ Rectangle {
                                         width: wpRoot._isGlobalAltMixed ? parent.width * 0.42 : parent.width * 0.6
                                         anchors.verticalCenter: parent.verticalCenter
                                         horizontalAlignment: TextInput.AlignHCenter
-                                        // TTS: يصغّر الخط ليفِت داخل مساحة الرقم
                                         font.pixelSize: {
                                             var need = altTM.advanceWidth
                                             return (need > 0 && width > 0 && need > width)
@@ -714,7 +768,7 @@ Rectangle {
                                                    : wpRoot._fs
                                         }
                                         font.family: "monospace"
-                                        color: rowItem._item && rowItem._item.specifiesAltitude ? wpRoot.cNeon : wpRoot.cGrey
+                                        color: rowItem._item && rowItem._item.specifiesAltitude ? wpRoot.cNeon : wpRoot.cWhite
                                         selectByMouse: true
                                         readOnly: !(rowItem._item && rowItem._item.specifiesAltitude)
                                         text: (rowItem._item && rowItem._item.specifiesAltitude && rowItem._item.altitude)
@@ -736,7 +790,7 @@ Rectangle {
                                         text: QGroundControl.unitsConversion.appSettingsVerticalDistanceUnitsString
                                         font.pixelSize: wpRoot._fs * 0.85
                                         font.family: "monospace"
-                                        color: wpRoot.cGrey
+                                        color: wpRoot.cWhite
                                     }
                                     Loader {
                                         width: parent.width * 0.4
@@ -752,9 +806,6 @@ Rectangle {
                                     }
                                 }
                             }
-                            // ── أعمدة البراميترات الديناميكية: كل صف يملأ العمود
-                            //    بمطابقة اسم الـFact (Loiter Time / Speed / ...).
-                            //    الصف اللي ما عنده هذا البراميتر يطلع "—".
                             Repeater {
                                 model: wpRoot._extraFacts
                                 Rectangle {
@@ -766,6 +817,8 @@ Rectangle {
                                     property string _pname:  modelData ? modelData.name : ""
                                     property var    _rf:     wpRoot._rowFactByName(rowItem._item, _pname)
                                     property bool   _isEnum: _rf && _rf.enumStrings !== undefined && _rf.enumStrings.length > 0
+                                    property bool   _hasUnit: _rf && !_isEnum && !isNaN(_rf.rawValue) &&
+                                                               _rf.units !== undefined && _rf.units.length > 0
                                     TextMetrics {
                                         id: pTM
                                         font.family:    "monospace"
@@ -776,10 +829,9 @@ Rectangle {
                                         id: pTi
                                         anchors.fill:        parent
                                         anchors.leftMargin:  wpRoot._u * 0.5
-                                        anchors.rightMargin: wpRoot._u * 0.5
+                                        anchors.rightMargin: pCell._hasUnit ? (unitLbl.implicitWidth + wpRoot._u * 0.7) : wpRoot._u * 0.5
                                         verticalAlignment:   TextInput.AlignVCenter
                                         horizontalAlignment: TextInput.AlignHCenter
-                                        // TTS: يصغّر الخط ليفِت داخل الخلية
                                         font.pixelSize: {
                                             var avail = width - wpRoot._u
                                             var need  = pTM.advanceWidth
@@ -788,11 +840,10 @@ Rectangle {
                                                    : wpRoot._fs
                                         }
                                         font.family:         "monospace"
-                                        color:               pCell._rf ? wpRoot.cOrange : wpRoot.cGrey
+                                        color:               pCell._rf ? wpRoot.cOrange : wpRoot.cWhite
                                         selectByMouse:       true
                                         readOnly:            !pCell._rf || pCell._isEnum
                                         clip:                true
-                                        // TTS: nanFacts غير المُغيّرة قيمتها NaN → تنعرض "—" مثل QGC
                                         text: {
                                             if (!pCell._rf) return "—"
                                             if (!pCell._isEnum && isNaN(pCell._rf.rawValue)) return "—"
@@ -806,9 +857,17 @@ Rectangle {
                                             focus = false
                                         }
                                     }
-                                    // TTS: خانة enum (Center/Tangent وغيرها) تُعدَّل عبر قائمة منسدلة
-                                    // بدل الكتابة النصية — مرتبطة بـ Fact.enumIndex (مؤكد من Fact.h:
-                                    // Q_PROPERTY(int enumIndex READ enumIndex WRITE setEnumIndex)).
+                                    Text {
+                                        id: unitLbl
+                                        visible: pCell._hasUnit
+                                        anchors.right: parent.right
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        anchors.rightMargin: wpRoot._u * 0.3
+                                        text: pCell._rf ? pCell._rf.units : ""
+                                        font.pixelSize: wpRoot._fs * 0.75
+                                        font.family: "monospace"
+                                        color: wpRoot.cWhite
+                                    }
                                     MouseArea {
                                         anchors.fill: parent
                                         visible: pCell._isEnum
@@ -826,7 +885,7 @@ Rectangle {
                                         anchors.rightMargin: wpRoot._u * 0.3
                                         text: "▾"
                                         font.pixelSize: wpRoot._fs * 0.7
-                                        color: wpRoot.cGrey
+                                        color: wpRoot.cWhite
                                     }
                                     Menu {
                                         id: enumMenu
@@ -840,7 +899,6 @@ Rectangle {
                                     }
                                 }
                             }
-                            // ── ACTIONS: DELETE + ▲▼ لتحريك النقطة ──────────────
                             Item {
                                 width:  wpRoot.colAct
                                 height: wpRoot._rowH

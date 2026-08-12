@@ -4,23 +4,19 @@ import QtQuick.Dialogs
 import QtLocation
 import QtPositioning
 import QtQuick.Layouts
-
 import QGroundControl
 import QGroundControl.Controls
 import QGroundControl.FlightMap
 import QGroundControl.Logging
-
 /// This provides the smarts behind the guided mode commands, minus the user interface. This way you can change UI
 /// without affecting the underlying functionality.
 Item {
     id: _root
-
     property var missionController
     property var confirmDialog
     property var guidedValueSlider
     property var fwdFlightGotoMapCircle
     property var orbitMapCircle
-
     readonly property string emergencyStopTitle:            qsTr("EMERGENCY STOP")
     readonly property string armTitle:                      qsTr("Arm")
     readonly property string mvArmTitle:                    qsTr("Arm (MV)")
@@ -49,7 +45,6 @@ Item {
     readonly property string setEstimatorOriginTitle:       qsTr("Set Estimator Origin")
     readonly property string setFlightMode:                 qsTr("Set Flight Mode")
     readonly property string changeHeadingTitle:            qsTr("Change Heading")
-
     readonly property string armMessage:                        qsTr("Arm the vehicle.")
     readonly property string mvArmMessage:                      qsTr("Arm selected vehicles.")
     readonly property string forceArmMessage:                   qsTr("WARNING: This will force arming of the vehicle bypassing any safety checks.")
@@ -78,7 +73,6 @@ Item {
     readonly property string setEstimatorOriginMessage:         qsTr("Make the specified location the estimator origin")
     readonly property string setFlightModeMessage:              qsTr("Set the vehicle flight mode to %1").arg(_actionData)
     readonly property string changeHeadingMessage:              qsTr("Set the vehicle heading towards the specified location")
-
     readonly property int actionRTL:                        1
     readonly property int actionLand:                       2
     readonly property int actionTakeoff:                    3
@@ -108,23 +102,22 @@ Item {
     readonly property int actionMVArm:                      28
     readonly property int actionMVDisarm:                   29
     readonly property int actionChangeLoiterRadius:         30
-
     readonly property int customActionStart:                10000 // Custom actions ids should start here so that they don't collide with the built in actions
-
     property var    _activeVehicle:             QGroundControl.multiVehicleManager.activeVehicle
     property var    _flyViewSettings:           QGroundControl.settingsManager.flyViewSettings
     property var    _unitsConversion:           QGroundControl.unitsConversion
     property bool   _useChecklist:              QGroundControl.settingsManager.appSettings.useChecklist.rawValue && QGroundControl.corePlugin.options.preFlightChecklistUrl.toString().length
     property bool   _enforceChecklist:          _useChecklist && QGroundControl.settingsManager.appSettings.enforceChecklist.rawValue
     property bool   _checklistPassed:           _activeVehicle ? (_useChecklist ? (_enforceChecklist ? _activeVehicle.checkListState === Vehicle.CheckListPassed : true) : true) : true
-    property bool   _canArm:                    _activeVehicle ? (_checklistPassed && (!_activeVehicle.healthAndArmingCheckReport.supported || _activeVehicle.healthAndArmingCheckReport.canArm)) : false
-    property bool   _canTakeoff:                _activeVehicle ? (_checklistPassed && (!_activeVehicle.healthAndArmingCheckReport.supported || _activeVehicle.healthAndArmingCheckReport.canTakeoff)) : false
-    property bool   _canStartMission:           _activeVehicle ? (_checklistPassed && (!_activeVehicle.healthAndArmingCheckReport.supported || _activeVehicle.healthAndArmingCheckReport.canStartMission)) : false
+    // TTS: يمنع التسليح/الإقلاع/بدء المهمة إلا بعد اكتمال Pre-Flight Inspection
+    property bool ttsInspectionDone: false
+    property bool   _canArm:                    _activeVehicle ? (ttsInspectionDone && _checklistPassed && (!_activeVehicle.healthAndArmingCheckReport.supported || _activeVehicle.healthAndArmingCheckReport.canArm)) : false
+    property bool   _canTakeoff:                _activeVehicle ? (ttsInspectionDone && _checklistPassed && (!_activeVehicle.healthAndArmingCheckReport.supported || _activeVehicle.healthAndArmingCheckReport.canTakeoff)) : false
+    property bool   _canStartMission:           _activeVehicle ? (ttsInspectionDone && _checklistPassed && (!_activeVehicle.healthAndArmingCheckReport.supported || _activeVehicle.healthAndArmingCheckReport.canStartMission)) : false
     property bool   _initialConnectComplete:    _activeVehicle ? _activeVehicle.initialConnectComplete : false
-
     property bool showEmergenyStop:         _guidedActionsEnabled && !_hideEmergenyStop && _vehicleArmed && _vehicleFlying
     property bool showArm:                  _guidedActionsEnabled && !_vehicleArmed && _canArm
-    property bool showForceArm:             _guidedActionsEnabled && !_vehicleArmed
+    property bool showForceArm:             _guidedActionsEnabled && !_vehicleArmed && ttsInspectionDone
     property bool showDisarm:               _guidedActionsEnabled && _vehicleArmed && !_vehicleFlying
     property bool showRTL:                  _guidedActionsEnabled && _activeVehicle && _vehicleArmed && _activeVehicle.supports.guidedMode && _vehicleFlying && !_vehicleInRTLMode
     property bool showTakeoff:              _guidedActionsEnabled && _activeVehicle && (_activeVehicle.supports.guidedTakeoffWithAltitude || _activeVehicle.supports.guidedTakeoffWithoutAltitude) && !_vehicleFlying && _canTakeoff
@@ -142,15 +135,11 @@ Item {
     property bool showSetHome:              _guidedActionsEnabled
     property bool showSetEstimatorOrigin:   _activeVehicle && !(_activeVehicle.sensorsPresentBits & MAVLinkEnums.MAV_SYS_STATUS_SENSOR_GPS)
     property bool showChangeHeading:        _guidedActionsEnabled && _vehicleFlying
-
     property string changeSpeedTitle:   _vehicleInFwdFlight ? changeAirspeedTitle : changeCruiseSpeedTitle
     property string changeSpeedMessage: _vehicleInFwdFlight ? changeAirspeedMessage : changeCruiseSpeedMessage
-
     // Note: The '_visualItemsCount - 2' is a hack to not trigger resume mission when a mission ends with an RTL item
     property bool showResumeMission:    _activeVehicle && !_vehicleArmed && _vehicleWasFlying && _missionAvailable && _resumeMissionIndex > 0 && (_resumeMissionIndex < _visualItemsCount - 2)
-
     property bool guidedUIVisible:          confirmDialog.visible
-
     property var    _corePlugin:            QGroundControl.corePlugin
     property var    _corePluginOptions:     QGroundControl.corePlugin.options
     property bool   _guidedActionsEnabled:  (!ScreenTools.isDebug && _corePluginOptions.guidedActionsRequireRCRSSI && _activeVehicle) ? _rcRSSIAvailable : _activeVehicle
@@ -175,30 +164,25 @@ Item {
     property bool   _fixedWingOnApproach:   _activeVehicle ? _activeVehicle.fixedWing && _vehicleLanding : false
     property bool   _vehicleInFwdFlight:    _activeVehicle ? _activeVehicle.inFwdFlight : false
     property bool  _speedLimitsAvailable:   _activeVehicle && ((_vehicleInFwdFlight && _activeVehicle.haveFWSpeedLimits) || (!_vehicleInFwdFlight && _activeVehicle.haveMRSpeedLimits))
-
     // You can turn on log output for GuidedActionsController by turning on GuidedActionsControllerLog category
     property bool __guidedModeSupported:    _activeVehicle ? _activeVehicle.supports.guidedMode : false
     property bool __pauseVehicleSupported:  _activeVehicle ? _activeVehicle.supports.pauseVehicle : false
     property bool __roiSupported:           _activeVehicle ? !_hideROI && _activeVehicle.supports.roiMode : false
     property bool __orbitSupported:         _activeVehicle ? !_hideOrbit && _activeVehicle.supports.orbitMode : false
     property bool __flightMode:             _flightMode
-
     // Allow custom builds to add custom actions by overriding CustomGuidedActionsController.qml
     CustomGuidedActionsController {
         id: customController
     }
     property var _customController: customController
-
     function _isGuidedActionsControllerLogEnabled() {
         return QGCLoggingCategoryManager.isCategoryEnabled("GuidedActionsControllerLog")
     }
-
     function _outputState() {
         if (_isGuidedActionsControllerLogEnabled()) {
             console.log(qsTr("_activeVehicle(%1) _vehicleArmed(%2) guidedModeSupported(%3) _vehicleFlying(%4) _vehicleWasFlying(%5) _vehicleInRTLMode(%6) pauseVehicleSupported(%7) _vehiclePaused(%8) _flightMode(%9) _visualItemsCount(%10) roiSupported(%11) orbitSupported(%12) _missionActive(%13) _hideROI(%14) _hideOrbit(%15)").arg(_activeVehicle ? 1 : 0).arg(_vehicleArmed ? 1 : 0).arg(__guidedModeSupported ? 1 : 0).arg(_vehicleFlying ? 1 : 0).arg(_vehicleWasFlying ? 1 : 0).arg(_vehicleInRTLMode ? 1 : 0).arg(__pauseVehicleSupported ? 1 : 0).arg(_vehiclePaused ? 1 : 0).arg(_flightMode).arg(_visualItemsCount).arg(__roiSupported).arg(__orbitSupported).arg(_missionActive).arg(_hideROI).arg(_hideOrbit))
         }
     }
-
     function setupSlider(actionCode) {
         if (actionCode === actionTakeoff) {
             guidedValueSlider.setupSlider(
@@ -234,9 +218,7 @@ Item {
                 qsTr("Alt (rel)"))
         }
     }
-
     on_ActiveVehicleChanged: _outputState()
-
     Component.onCompleted:              _outputState()
     on_VehicleArmedChanged:             _outputState()
     on_VehicleInRTLModeChanged:         _outputState()
@@ -248,7 +230,6 @@ Item {
     on__OrbitSupportedChanged:          _outputState()
     on_VisualItemsCountChanged:         _outputState()
     on_MissionActiveChanged:            _outputState()
-
     on_CurrentMissionIndexChanged: {
         if (_isGuidedActionsControllerLogEnabled()) {
             console.log("_currentMissionIndex", _currentMissionIndex)
@@ -320,7 +301,6 @@ Item {
             confirmAction(actionLandAbort)
         }
     }
-
     on_VehicleFlyingChanged: {
         _outputState()
         if (!_vehicleFlying) {
@@ -329,65 +309,51 @@ Item {
             _vehicleWasFlying = true
         }
     }
-
     property var _actionData
-
     on_FlightModeChanged: {
         _vehiclePaused =        _activeVehicle ? _flightMode === _activeVehicle.pauseFlightMode : false
         _vehicleInRTLMode =     _activeVehicle ? _flightMode === _activeVehicle.rtlFlightMode || _flightMode === _activeVehicle.smartRTLFlightMode : false
         _vehicleInLandMode =    _activeVehicle ? _flightMode === _activeVehicle.landFlightMode : false
         _vehicleInMissionMode = _activeVehicle ? _flightMode === _activeVehicle.missionFlightMode : false // Must be last to get correct signalling for showStartMission popups
     }
-
     Connections {
         target:                     missionController
         function onResumeMissionUploadFail() { confirmAction(actionResumeMissionUploadFail) }
     }
-
     Connections {
         target:                             mainWindow
         function onArmVehicleRequest() { armVehicleRequest() }
         function onForceArmVehicleRequest() { forceArmVehicleRequest() }
         function onDisarmVehicleRequest() { disarmVehicleRequest() }
     }
-
     function armVehicleRequest() {
         confirmAction(actionArm)
     }
-
     function forceArmVehicleRequest() {
         confirmAction(actionForceArm)
     }
-
     function disarmVehicleRequest() {
         if (showEmergenyStop) {
             confirmAction(actionEmergencyStop)
         } else {
             confirmAction(actionDisarm)
         }
-
     }
-
     function closeAll() {
         confirmDialog.visible = false
         guidedValueSlider.visible = false
     }
-
     // Called when an action is about to be executed in order to confirm
     function confirmAction(actionCode, actionData, mapIndicator) {
         var showImmediate = true
-
         // Cancel any previously pending action, notifying its map indicator if it differs from the incoming one
         confirmDialog.confirmCancelled(mapIndicator)
-
         confirmDialog.action = actionCode
         confirmDialog.actionData = actionData
         confirmDialog.mapIndicator = mapIndicator
         confirmDialog.optionText = ""
         _actionData = actionData
-
         setupSlider(actionCode)
-
         switch (actionCode) {
         case actionArm:
             if (_vehicleFlying || !_guidedActionsEnabled) {
@@ -545,7 +511,6 @@ Item {
         }
         confirmDialog.show(showImmediate)
     }
-
     // Executes the specified action
     // Returns false if the action failed and any associated map indicator should be restored
     function executeAction(actionCode, actionData, sliderOutputValue, optionChecked) {

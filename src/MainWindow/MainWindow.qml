@@ -400,7 +400,10 @@ ApplicationWindow {
                                         width:                  ScreenTools.defaultFontPixelWidth * 45
                                         expanded:               true
                                         planMasterController:   globals.planMasterControllerFlyView
-                                        onInspectionCompleted:  pfiDialog.close()
+                                        onInspectionCompleted: {
+                                        globals.guidedControllerFlyView.ttsInspectionDone = true
+                                        pfiDialog.close()
+                                     }
                                     }
                                 }
                             }

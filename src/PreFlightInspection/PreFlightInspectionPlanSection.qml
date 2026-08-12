@@ -365,7 +365,7 @@ Column {
             _apply(3, _checkEkf())
             _apply(4, _checkVibration())
           //  _apply(5, _checkTelemetry())
-            _apply(6, _checkMission())
+            _apply(5, _checkMission())
             recalculateAutomaticStatus()
         }
         function _rollUp(model) {

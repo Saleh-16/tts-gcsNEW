@@ -56,7 +56,6 @@ Item {
         coordinate.altitude  = coordinate.altitude.toFixed(_decimalPlaces)
         return coordinate
     }
-
     // TTS: تنسيق إحداثي حسب الصيغة المختارة من قسم Defaults.
     //      التحويل كله بدوال QGC الأصلية عبر TransformPositionController
     //      (QGCGeo::convertGeoToUTM / convertGeoToMGRS) — بدون أي حساب مستقل.
@@ -275,8 +274,6 @@ Item {
             allowGCSLocationCenter: true
             allowVehicleLocationCenter: true
             planView: true
-
-
             zoomLevel: QGroundControl.flightMapZoom
             center: QGroundControl.flightMapPosition
             // This is the center rectangle of the map which is not obscured by tools
@@ -449,7 +446,6 @@ Item {
                 ttsNewItemTerrainQuery.pendingItem = null
             }
         }
-
         Timer {
             id: ttsTerrainDebounce
             interval: 150   // تأخير بسيط لتفادي إغراق نظام Terrain Query بطلب لكل بكسل
@@ -461,7 +457,6 @@ Item {
                 }
             }
         }
-
         MouseArea {
             id: ttsCoordTracker
             anchors.fill:    editorMap
@@ -469,10 +464,8 @@ Item {
             acceptedButtons: Qt.NoButton
             propagateComposedEvents: true
             z: QGroundControl.zOrderWidgets + 99
-
             property var  _hoverCoord: null
             property var  _hoverAlt:   null   // ارتفاع الأرض (متر AMSL) — null حتى توصل النتيجة
-
             onPositionChanged: (mouse) => {
                 ttsCoordTracker._hoverCoord = editorMap.toCoordinate(Qt.point(mouse.x, mouse.y), false)
                 ttsCoordTracker._hoverAlt = null
@@ -485,7 +478,6 @@ Item {
                 ttsCoordTracker._hoverAlt = null
             }
         }
-
         // TTS: محوّل QGC الأصلي — كتابة coordinate تملأ zone/hemisphere/
         //      easting/northing/mgrs تلقائياً عبر QGCGeo. لا حساب مستقل.
         TransformPositionController {
@@ -499,7 +491,6 @@ Item {
             onCoordinateChanged: initValues()
             Component.onCompleted: initValues()
         }
-
         Rectangle {
             id:                   ttsCoordBox
             z:                    QGroundControl.zOrderWidgets + 100
@@ -513,7 +504,6 @@ Item {
             border.color:         "#1E2830"
             border.width:         1
             visible:              ttsCoordTracker._hoverCoord !== null
-
             Text {
                 id:              coordText
                 anchors.centerIn: parent
@@ -608,11 +598,13 @@ Item {
                 property: "checked"
                 value: _addWaypointOnClick
             }
+            /* TTS: ROI button removed — Binding commented out
             Binding {
                 target: roiButton
                 property: "checked"
                 value: _addROIOnClick
             }
+            */
             ToolStripActionList {
                 id: toolStripActionList
                 model: [
@@ -626,6 +618,7 @@ Item {
                             insertTakeoffItemAfterCurrent()
                         }
                     },
+                    /* TTS: Pattern button removed by request
                     ToolStripAction {
                         objectName: "planToolStrip_patternButton"
                         text: _singleComplexItem ? _missionController.complexMissionItems[0].translatedName : qsTr("Pattern")
@@ -639,6 +632,7 @@ Item {
                             }
                         }
                     },
+                    */
                     ToolStripAction {
                         id: waypointButton
                         objectName: "planToolStrip_waypointButton"
@@ -649,6 +643,7 @@ Item {
                         checkable: true
                         onTriggered: { _addWaypointOnClick = !_addWaypointOnClick; if (_addWaypointOnClick) _addROIOnClick = false }
                     },
+                    /* TTS: ROI button removed by request
                     ToolStripAction {
                         id: roiButton
                         objectName: "planToolStrip_roiButton"
@@ -659,6 +654,8 @@ Item {
                         checkable: true
                         onTriggered: { _addROIOnClick = !_addROIOnClick; if (_addROIOnClick) _addWaypointOnClick = false }
                     },
+                    */
+                    /* TTS: Land button removed by request
                     ToolStripAction {
                         objectName: "planToolStrip_landButton"
                         text: _planMasterController.controllerVehicle.multiRotor
@@ -673,6 +670,7 @@ Item {
                             insertLandItemAfterCurrent()
                         }
                     },
+                    */
                     ToolStripAction {
                         text: qsTr("Stats")
                         iconSource: "/res/chevron-double-right.svg"
@@ -893,7 +891,6 @@ Item {
                 planMasterController: _root._planMasterController
             }
         }
-
         // ══ TTS WAYPOINT TABLE — جدول تعديل نقاط المهمة (إضافة، لا يحذف اللوحة اليمنى) ══
         // ثابت دائماً (لا طي/فتح)، ملتصق مباشرة بشريط الأدوات يسار واللوحة اليمنى (بدون مسافة)
         WaypointTable {
