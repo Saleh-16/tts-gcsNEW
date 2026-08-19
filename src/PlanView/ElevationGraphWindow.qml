@@ -31,6 +31,7 @@ Window {
     height: ScreenTools.defaultFontPixelHeight * 25
     minimumWidth:  ScreenTools.defaultFontPixelWidth * 40
     minimumHeight: ScreenTools.defaultFontPixelHeight * 12
+
     /// Window chrome and chart background. Lighter than the original near-black
     /// (#0A0C0E), which made the thin plot lines read as harsh bright strokes
     /// on a void. The chart sits one step lighter than the surround so its
@@ -44,14 +45,28 @@ Window {
     readonly property color _markerLine:      "#5A6B78"
     readonly property color _markerHighlight:  "#C8505F"
 
-    color:  _windowBackground
+    /// Sequence number of the waypoint whose marker is drawn solid and
+    /// coloured, as a fixed reference line on the profile. The number matches
+    /// the index printed on the marker itself. -1 turns the highlight off.
+    readonly property int _highlightWaypoint: 3
 
+    /// Warning badge colours, used when a terrain collision falls inside the
+    /// visible span but its red line has been zoomed off the altitude axis.
+    readonly property color _warnText: "#FF6B6B"
+    readonly property color _warnFill: "#33FF2244"
+
+    color:  _windowBackground
     flags: Qt.Window
 
-    property real _fullMinX: 0
-    property real _fullMaxX: 100
-    property real _fullMinY: 0
-    property real _fullMaxY: 100
+    /// Full mission extent on the X axis. Bound, not captured: TerrainStatus
+    /// freezes its own axisX as soon as this window starts driving
+    /// externalMinX/externalMaxX, so a one-off snapshot taken at startup would
+    /// never notice the mission growing. Reset Zoom would then restore a range
+    /// that clips the new waypoints, with no way back except reopening the
+    /// window.
+    readonly property real _fullMinX: 0
+    readonly property real _fullMaxX: terrainStatus.fullRangeMaxX > 0 ? terrainStatus.fullRangeMaxX : 100
+
     property bool _boundsCaptured: false
 
     property real _viewMinX: 0
@@ -95,6 +110,19 @@ Window {
         return (fullSpan > 0 && viewSpan > fullSpan) ? viewSpan / fullSpan : 1
     }
 
+    /// The mission length changed under us (waypoints added, removed or moved).
+    /// Pull the view back inside the new extent rather than leaving it parked
+    /// past the end of the data, where the chart would be blank and only Reset
+    /// Zoom would explain why.
+    on_FullMaxXChanged: {
+        if (!_boundsCaptured) {
+            return
+        }
+        if (_viewMaxX > _fullMaxX || _viewMaxX <= _viewMinX || _viewMinX < _fullMinX) {
+            _resetZoom()
+        }
+    }
+
     ColumnLayout {
         anchors.fill:    parent
         anchors.margins: ScreenTools.defaultFontPixelWidth
@@ -112,18 +140,59 @@ Window {
 
             Item { Layout.fillWidth: true }
 
-            // Legend. Colours are the LineSeries colours declared in
-            // TerrainStatus.qml - keep the two in step if a series colour ever
-            // changes there. "No terrain data" is the one worth calling out:
-            // that line is not an altitude reading at all, it marks a stretch
-            // where QGC has no terrain tiles, so the altitudes shown around it
-            // can't be trusted.
+            // Warning badges.
+            //
+            // Both restate, as text, a line that the reader can lose while
+            // zoomed. The missing-data bar is the clear-cut case: it is drawn
+            // at the whole mission's minimum altitude, so an auto-fitted Y axis
+            // pushes it off the plot entirely. The collision line survives more
+            // often, since it is drawn at flight altitude, but it carries no
+            // label of its own and is easy to read as just a thicker flight
+            // path. Both are driven by the same series data the chart plots, so
+            // they cannot disagree with it.
+            component WarningBadge: Rectangle {
+                property alias text: badgeLabel.text
+
+                Layout.alignment:       Qt.AlignVCenter
+                Layout.rightMargin:     ScreenTools.defaultFontPixelWidth
+                Layout.preferredWidth:  badgeLabel.implicitWidth + ScreenTools.defaultFontPixelWidth * 1.2
+                Layout.preferredHeight: badgeLabel.implicitHeight + ScreenTools.defaultFontPixelHeight * 0.3
+                radius:                 ScreenTools.defaultFontPixelWidth * 0.3
+                color:                  elevationWindow._warnFill
+                border.color:           elevationWindow._warnText
+                border.width:           1
+
+                QGCLabel {
+                    id:               badgeLabel
+                    anchors.centerIn: parent
+                    font.pointSize:   ScreenTools.smallFontPointSize
+                    font.bold:        true
+                    color:            elevationWindow._warnText
+                }
+            }
+
+            WarningBadge {
+                visible: terrainStatus.collisionInView
+                text:    qsTr("⚠  TERRAIN COLLISION IN VIEW")
+            }
+
+            WarningBadge {
+                visible: terrainStatus.missingDataInView
+                text:    qsTr("⚠  NO TERRAIN DATA IN VIEW")
+            }
+
+            // Legend. Swatches read the actual LineSeries colours out of
+            // TerrainStatus, so they cannot drift out of step with what is
+            // plotted. "No terrain data" is the one worth calling out: that
+            // line is not an altitude reading at all, it marks a stretch where
+            // QGC has no terrain tiles, so the altitudes shown around it can't
+            // be trusted.
             Repeater {
                 model: [
-                    { swatch: "orange", label: qsTr("Flight path") },
-                    { swatch: "green",  label: qsTr("Terrain") },
-                    { swatch: "red",    label: qsTr("Terrain collision") },
-                    { swatch: "yellow", label: qsTr("No terrain data") }
+                    { swatch: terrainStatus.seriesFlightColor,    label: qsTr("Flight path") },
+                    { swatch: terrainStatus.seriesTerrainColor,   label: qsTr("Terrain") },
+                    { swatch: terrainStatus.seriesCollisionColor, label: qsTr("Terrain collision") },
+                    { swatch: terrainStatus.seriesMissingColor,   label: qsTr("No terrain data") }
                 ]
 
                 RowLayout {
@@ -175,16 +244,16 @@ Window {
                 // once the view is zoomed out past the mission itself.
                 autoFitYExpansion: elevationWindow._zoomOutExpansion
 
-                // Draw the WP3 marker as a red dashed line so it stands out
-                // against the plain white marker lines of the other waypoints.
-                // Change this number to highlight a different waypoint, or set
-                // it to -1 to turn the highlight off.
-                // WP3 is drawn as a solid coloured line; every other waypoint
+                // One waypoint is drawn as a solid coloured line; every other
                 // marker is dashed and muted, so the dozen ordinary markers on
                 // a long mission read as a faint scale behind the data instead
-                // of a picket fence in front of it. Set highlightSeqNum to -1
-                // to turn the highlight off.
-                highlightSeqNum:      3
+                // of a picket fence in front of it.
+                //
+                // Pinned to a fixed sequence number rather than following the
+                // selection, so the reference line stays put while you click
+                // around the profile. Change _highlightWaypoint to move it, or
+                // set it to -1 to turn the highlight off entirely.
+                highlightSeqNum:      elevationWindow._highlightWaypoint
                 highlightMarkerColor: elevationWindow._markerHighlight
                 markerLineColor:      elevationWindow._markerLine
                 dashOrdinaryMarkers:  true
@@ -202,7 +271,26 @@ Window {
 
             MouseArea {
                 id: dragZoomArea
-                anchors.fill: parent
+
+                // Deliberately not anchors.fill.
+                //
+                // This area sits on top of TerrainStatus and accepts left-button
+                // presses, so anything it covers can no longer be clicked. The
+                // waypoint index labels are anchored to the BOTTOM of their
+                // marker lines, so covering the full height silently killed
+                // them: setCurrentSeqNum was wired up and could never fire.
+                //
+                // The uncovered strip is taken from TerrainStatus rather than
+                // guessed, because the labels move with the chart's bottom
+                // margin - a fixed guess that fitted one margin stopped fitting
+                // the moment that margin was resized to stop clipping the
+                // distance labels.
+                anchors.left:         parent.left
+                anchors.right:        parent.right
+                anchors.top:          parent.top
+                anchors.bottom:       parent.bottom
+                anchors.bottomMargin: terrainStatus.markerLabelZoneHeight
+
                 acceptedButtons: Qt.LeftButton
 
                 property bool dragging: false
@@ -237,19 +325,15 @@ Window {
                 /// than zooming to the middle and then hunting for it again.
                 onWheel: (wheel) => {
                     if (plotRect.width <= 0) return
-
                     var delta = wheel.angleDelta.y
                     if (delta === 0) return
-
                     // One notch is 120 units; trackpads send smaller steps, so
                     // scale the factor by the actual delta instead of treating
                     // every event as a full notch.
                     var notches = delta / 120
                     var factor  = Math.pow(1 / elevationWindow._wheelZoomStep, notches)
-
                     var fraction = (wheel.x - plotRect.x) / plotRect.width
                     fraction = Math.max(0, Math.min(1, fraction))
-
                     elevationWindow._zoomAtFraction(fraction, factor)
                     wheel.accepted = true
                 }
@@ -259,6 +343,7 @@ Window {
                     startX   = mouse.x
                     currentX = mouse.x
                 }
+
                 onPositionChanged: (mouse) => {
                     if (dragging) currentX = mouse.x
                 }
@@ -266,7 +351,6 @@ Window {
                 onReleased: (mouse) => {
                     if (!dragging) return
                     dragging = false
-
                     if (plotRect.width <= 0) return
                     if (clampedHi - clampedLo < elevationWindow._minDragPixels) return
 
@@ -292,6 +376,9 @@ Window {
                 }
             }
 
+            /// Waits for real data before letting this window take over the X
+            /// axis. It no longer records the full range - that is bound - it
+            /// only decides WHEN the takeover may start.
             Timer {
                 interval: 300
                 running:  !elevationWindow._boundsCaptured
@@ -309,22 +396,17 @@ Window {
         var axisMinY = terrainStatus.chart.axisY.min
         var axisMaxY = terrainStatus.chart.axisY.max
 
-        var newFullMinY = isNaN(axisMinY) ? 0 : axisMinY
-        var newFullMaxY = isNaN(axisMaxY) || axisMaxY <= newFullMinY ? newFullMinY + 100 : axisMaxY
+        var minY = isNaN(axisMinY) ? 0 : axisMinY
+        var maxY = isNaN(axisMaxY) || axisMaxY <= minY ? minY + 100 : axisMaxY
 
         // TerrainStatus falls back to a 0..100 placeholder altitude range until
-        // real terrain data arrives; capturing then would lock in bogus bounds.
-        var looksLikePlaceholder = (newFullMinY === 0 && newFullMaxY === 100) || (axisMaxX <= 0)
+        // real terrain data arrives; taking over then would freeze the axis on
+        // bogus bounds.
+        var looksLikePlaceholder = (minY === 0 && maxY === 100) || (axisMaxX <= 0)
         if (looksLikePlaceholder) return
-
-        _fullMinX = 0
-        _fullMaxX = axisMaxX
-        _fullMinY = newFullMinY
-        _fullMaxY = newFullMaxY
 
         _viewMinX = _fullMinX
         _viewMaxX = _fullMaxX
-
         _boundsCaptured = true
     }
 

@@ -56,9 +56,6 @@ Item {
         coordinate.altitude  = coordinate.altitude.toFixed(_decimalPlaces)
         return coordinate
     }
-    // TTS: تنسيق إحداثي حسب الصيغة المختارة من قسم Defaults.
-    //      التحويل كله بدوال QGC الأصلية عبر TransformPositionController
-    //      (QGCGeo::convertGeoToUTM / convertGeoToMGRS) — بدون أي حساب مستقل.
     function ttsFormatCoord(coord) {
         if (!coord || !coord.isValid) return ""
         var fmt = QGroundControl.settingsManager.appSettings.coordinateFormat.rawValue
@@ -76,8 +73,40 @@ Item {
         }
         return "LAT: " + coord.latitude.toFixed(7) + "   LON: " + coord.longitude.toFixed(7)
     }
+    function ttsDistFromHome(coord) {
+        if (!coord || !coord.isValid) return ""
+        if (!_missionController.homePositionSet) return ""
+        var home = _missionController.plannedHomePosition
+        if (!home || !home.isValid) return ""
+        if (Math.abs(home.latitude) < 0.0001 && Math.abs(home.longitude) < 0.0001) return ""
+        var meters = home.distanceTo(coord)
+        var disp   = QGroundControl.unitsConversion.metersToAppSettingsHorizontalDistanceUnits(meters)
+        return "   DIST From home: " + disp.toFixed(1) + " " +
+               QGroundControl.unitsConversion.appSettingsHorizontalDistanceUnitsString
+    }
+
+    // ── TTS LAUNCHER PITCH — Plan View ──────────────────────────────────
+    //     Detects armed+stationary aircraft and shows pitch for launcher setup.
+    //     Auto-adjust modifies NAV_TAKEOFF param1 in the loaded plan.
+    property var  _activeVehicle: QGroundControl.multiVehicleManager.activeVehicle
+    property bool _vOk:          _activeVehicle !== null && _activeVehicle !== undefined
+    property bool _vArmed:       _vOk ? _activeVehicle.armed   : false
+    property bool _vFlying:      _vOk ? _activeVehicle.flying  : false
+    property real _vPitch:       _vOk && _activeVehicle.pitch.rawValue !== undefined && !isNaN(_activeVehicle.pitch.rawValue) ? _activeVehicle.pitch.rawValue : 0
+    property real _vGndSpd: {
+        if (!_vOk) return 0
+        var f = _activeVehicle.groundSpeed || (_activeVehicle.vehicle ? _activeVehicle.vehicle.groundSpeed : null)
+        return (f && f.rawValue !== undefined && !isNaN(f.rawValue)) ? f.rawValue : 0
+    }
+    property bool _onLauncher:          _vArmed && !_vFlying && _vGndSpd < 1.0
+    property bool _launcherDismissed:   false
+
+    on_VArmedChanged: {
+        if (_vArmed) _launcherDismissed = false
+    }
+
     MapFitFunctions {
-        id: mapFitFunctions  // The name for this id cannot be changed without breaking references outside of this code. Beware!
+        id: mapFitFunctions
         map: editorMap
         usePlannedHomePosition: true
         planMasterController: _planMasterController
@@ -114,14 +143,13 @@ Item {
             return true
         }
         function upload() {
-            // ── TTS: Block upload if review requires acknowledgment ──
             if (!_root._reviewUploadAllowed) {
                 QGroundControl.showMessageDialog(_root,
                     qsTr("Upload Blocked"),
                     qsTr("Mission review has unresolved critical findings. Accept responsibility in the Mission Review panel before uploading."))
                 return
             }
-            if (!checkReadyForSaveUpload(false /* save */)) {
+            if (!checkReadyForSaveUpload(false)) {
                 return
             }
             switch (_missionController.sendToVehiclePreCheck()) {
@@ -146,14 +174,13 @@ Item {
             fileDialog.openForLoad()
         }
         function saveToSelectedFile() {
-            // ── TTS: Block save if review requires acknowledgment ──
             if (!_root._reviewUploadAllowed) {
                 QGroundControl.showMessageDialog(_root,
                     qsTr("Save Blocked"),
                     qsTr("Mission review has unresolved critical findings. Accept responsibility in the Mission Review panel before saving."))
                 return
             }
-            if (!checkReadyForSaveUpload(true /* save */)) {
+            if (!checkReadyForSaveUpload(true)) {
                 return
             }
             fileDialog.title =          qsTr("Save Plan")
@@ -165,7 +192,7 @@ Item {
             mapFitFunctions.fitMapViewportToMissionItems()
         }
         function saveKmlToSelectedFile() {
-            if (!checkReadyForSaveUpload(true /* save */)) {
+            if (!checkReadyForSaveUpload(true)) {
                 return
             }
             fileDialog.title =          qsTr("Save KML")
@@ -183,61 +210,65 @@ Item {
             _missionController.setCurrentPlanViewSeqNum(0, true)
         }
     }
+    function ttsTakeoffAltOffset() {
+        var v = QGroundControl.multiVehicleManager.activeVehicle
+        if (v && v.parameterManager.parameterExists(-1, "TKOFF_ALT")) {
+            var val = v.getParameterFact(-1, "TKOFF_ALT").rawValue
+            if (val > 0) return val
+        }
+        return 150
+    }
+    function ttsApplyTerrainAltitude(item, coord, overrideOffset) {
+        if (item && item.specifiesAltitude && coord && coord.isValid) {
+            ttsNewItemTerrainQuery.enqueue(item, coord, (overrideOffset !== undefined) ? overrideOffset : -1)
+        }
+    }
     function insertSimpleItemAfterCurrent(coordinate) {
         var nextIndex = _missionController.currentPlanViewVIIndex + 1
-        _missionController.insertSimpleMissionItem(coordinate, nextIndex, true /* makeCurrentItem */)
-        // TTS: تعبئة الارتفاع تلقائياً بارتفاع الأرض (AMSL) عند نفس موقع النقطة
-        // الجديدة، بدل الرقم الثابت الافتراضي — يقدر المستخدم يعدّله يدوياً بعدين.
-        // يستخدم نفس مكوّن الاستعلام (TTSHoverTerrainQuery) المسجّل مسبقاً لصندوق
-        // إحداثيات الماوس، بس بنسخة مستقلة هنا لتفادي تضارب الإشارات.
-        var newItem = _missionController.currentPlanViewItem
-        if (newItem && newItem.specifiesAltitude) {
-            ttsNewItemTerrainQuery.pendingItem = newItem
-            ttsNewItemTerrainQuery.requestAltitude(coordinate.latitude, coordinate.longitude)
-        }
+        _missionController.insertSimpleMissionItem(coordinate, nextIndex, true)
+        ttsApplyTerrainAltitude(_missionController.currentPlanViewItem, coordinate)
     }
     function insertROIAfterCurrent(coordinate) {
         var nextIndex = _missionController.currentPlanViewVIIndex + 1
-        _missionController.insertROIMissionItem(coordinate, nextIndex, true /* makeCurrentItem */)
+        _missionController.insertROIMissionItem(coordinate, nextIndex, true)
+        ttsApplyTerrainAltitude(_missionController.currentPlanViewItem, coordinate)
     }
     function insertCancelROIAfterCurrent() {
         var nextIndex = _missionController.currentPlanViewVIIndex + 1
-        _missionController.insertCancelROIMissionItem(nextIndex, true /* makeCurrentItem */)
+        _missionController.insertCancelROIMissionItem(nextIndex, true)
     }
     function insertComplexItemAfterCurrent(complexItemName) {
         var nextIndex = _missionController.currentPlanViewVIIndex + 1
-        _missionController.insertComplexMissionItem(complexItemName, mapCenter(), nextIndex, true /* makeCurrentItem */)
+        _missionController.insertComplexMissionItem(complexItemName, mapCenter(), nextIndex, true)
+        ttsApplyTerrainAltitude(_missionController.currentPlanViewItem, mapCenter())
     }
     function insertTakeoffItemAfterCurrent() {
         var nextIndex = _missionController.currentPlanViewVIIndex + 1
-        _missionController.insertTakeoffItem(mapCenter(), nextIndex, true /* makeCurrentItem */)
-        // TTS: إطفاء wizardMode تلقائياً بعد الإنشاء — نفس فعل زر "Done" الأصلي
-        // بمحرر Takeoff بالضبط (missionItem.wizardMode = false)، لأن لوحة اللوحة
-        // اليمنى اللي فيها هذا الزر مخفية بطلب صريح، فنسوي نفس التأثير برمجياً
-        // بدل ما نحتاج نضغطه يدوياً. المصدر: src/PlanView/SimpleItemEditor.qml
-        // (onClicked: missionItem.wizardMode = false) — مؤكد عبر grep بتاريخ 24 يوليو 2026.
+        _missionController.insertTakeoffItem(mapCenter(), nextIndex, true)
         var newItem = _missionController.currentPlanViewItem
         if (newItem) {
             newItem.wizardMode = false
         }
-        // TTS: نفس تعبئة الارتفاع تلقائياً من ارتفاع الأرض (AMSL) — Takeoff
-        // يُضاف بدالة منفصلة عن Waypoint العادي (insertTakeoffItem مو
-        // insertSimpleMissionItem)، فيحتاج نفس المنطق مكرر هنا. نقرأ إحداثية
-        // النقطة الفعلية بعد الإنشاء (newItem.coordinate) مو mapCenter() مباشرة،
-        // لأن Takeoff قد يعدّل موقعه داخلياً (زي ربطه بموقع الإقلاع).
-        if (newItem && newItem.specifiesAltitude && newItem.coordinate && newItem.coordinate.isValid) {
-            ttsNewItemTerrainQuery.pendingItem = newItem
-            ttsNewItemTerrainQuery.requestAltitude(newItem.coordinate.latitude, newItem.coordinate.longitude)
+        if (newItem && newItem.specifiesAltitude) {
+            var tkCoord = newItem.coordinate && newItem.coordinate.isValid ? newItem.coordinate : mapCenter()
+            ttsApplyTerrainAltitude(newItem, tkCoord, ttsTakeoffAltOffset())
         }
     }
     function insertLandItemAfterCurrent() {
         var nextIndex = _missionController.currentPlanViewVIIndex + 1
-        _missionController.insertLandItem(mapCenter(), nextIndex, true /* makeCurrentItem */)
+        _missionController.insertLandItem(mapCenter(), nextIndex, true)
+        var newItem = _missionController.currentPlanViewItem
+        var coord = mapCenter()
+        if (newItem && newItem.specifiesAltitude) {
+            ttsLandDelayTimer._item = newItem
+            ttsLandDelayTimer._coord = coord
+            ttsLandDelayTimer.restart()
+        }
     }
     QGCFileDialog {
         id: fileDialog
         folder: _appSettings ? _appSettings.missionSavePath : ""
-        property bool planFiles: true    ///< true: working with plan files, false: working with kml file
+        property bool planFiles: true
         onAcceptedForSave: (file) => {
             if (planFiles) {
                 if (_planMasterController.saveToFile(file)) {
@@ -276,17 +307,13 @@ Item {
             planView: true
             zoomLevel: QGroundControl.flightMapZoom
             center: QGroundControl.flightMapPosition
-            // This is the center rectangle of the map which is not obscured by tools
             property rect centerViewport: Qt.rect(_leftToolWidth + _margin,  _margin, editorMap.width - _leftToolWidth - _rightToolWidth - (_margin * 2), (missionStatus.visible ? missionStatus.y : height - _margin) - _margin)
             property real _leftToolWidth: toolStrip.x + toolStrip.width
             property real _rightToolWidth: rightPanel.width + rightPanel.anchors.rightMargin
             property real _nonInteractiveOpacity: 0.5
-            // Initial map position duplicates Fly view position
-            // TTS: تعيين موقع افتراضي بالسعودية (الرياض تقريباً) بدل آخر موقع
-            // محفوظ (QGroundControl.flightMapPosition)، بطلب صريح من المستخدم.
             Component.onCompleted: {
-                editorMap.center = QtPositioning.coordinate(17.5656, 44.2286)   // نجران تقريباً — جنوب السعودية
-                editorMap.zoomLevel = 6   // مستوى تقريب يظهر السعودية كاملة تقريباً
+                editorMap.center = QtPositioning.coordinate(17.5656, 44.2286)
+                editorMap.zoomLevel = 6
             }
             onZoomLevelChanged: {
                 QGroundControl.flightMapZoom = editorMap.zoomLevel
@@ -295,15 +322,13 @@ Item {
                 QGroundControl.flightMapPosition = editorMap.center
             }
             onMapClicked: (mouse) => {
-                // Take focus to close any previous editing
                 editorMap.focus = true
-                // Collapse layer switcher on any map click
                 layerSwitcher.expanded = false
                 collapseTimer.stop()
                 if (!mainWindow.allowViewSwitch()) {
                     return
                 }
-                var coordinate = editorMap.toCoordinate(Qt.point(mouse.x, mouse.y), false /* clipToViewPort */)
+                var coordinate = editorMap.toCoordinate(Qt.point(mouse.x, mouse.y), false)
                 coordinate.latitude = coordinate.latitude.toFixed(_decimalPlaces)
                 coordinate.longitude = coordinate.longitude.toFixed(_decimalPlaces)
                 coordinate.altitude = coordinate.altitude.toFixed(_decimalPlaces)
@@ -315,7 +340,6 @@ Item {
                         _addROIOnClick = false
                         if (_missionController.isROIActive) {
                             var pos = Qt.point(mouse.x, mouse.y)
-                            // For some strange reason using mainWindow in mapToItem doesn't work, so we use globals.parent instead which also gets us mainWindow
                             pos = editorMap.mapToItem(globals.parent, pos)
                             var dropPanel = insertOrCancelROIDropPanelComponent.createObject(mainWindow, { mapClickCoord: coordinate, clickRect: Qt.rect(pos.x, pos.y, 0, 0) })
                             dropPanel.open()
@@ -333,7 +357,6 @@ Item {
                     break
                 }
             }
-            // Add the mission item visuals to the map
             Repeater {
                 model: _missionController.visualItems
                 delegate: MissionItemMapVisual {
@@ -344,13 +367,11 @@ Item {
                     onClicked: (sequenceNumber) => { _missionController.setCurrentPlanViewSeqNum(sequenceNumber, false) }
                 }
             }
-            // Add lines between waypoints
             MissionLineView {
                 showSpecialVisual: _missionController.isROIBeginCurrentItem
                 model: _missionController.simpleFlightPathSegments
                 opacity: _editingLayer == _layerMission ? 1 : editorMap._nonInteractiveOpacity
             }
-            // Direction arrows in waypoint lines
             MapItemView {
                 model: _editingLayer == _layerMission ? _missionController.directionArrows : undefined
                 delegate: MapLineArrow {
@@ -360,7 +381,6 @@ Item {
                     z: QGroundControl.zOrderWaypointLines + 1
                 }
             }
-            // UI for splitting the current segment
             MapQuickItem {
                 id: splitSegmentItem
                 anchorPoint.x: sourceItem.width / 2
@@ -370,7 +390,7 @@ Item {
                 sourceItem: SplitIndicator {
                     onClicked: _missionController.insertSimpleMissionItem(splitSegmentItem.coordinate,
                                                                            _missionController.currentPlanViewVIIndex,
-                                                                           true /* makeCurrentItem */)
+                                                                           true)
                 }
                 function _updateSplitCoord() {
                     if (_missionController.splitSegment) {
@@ -391,7 +411,6 @@ Item {
                     function onCoordinate2Changed()   { splitSegmentItem._updateSplitCoord() }
                 }
             }
-            // Add the vehicles to the map
             MapItemView {
                 model: QGroundControl.multiVehicleManager.vehicles
                 delegate: VehicleMapItem {
@@ -418,37 +437,104 @@ Item {
                 opacity: _editingLayer != _layerRally ? editorMap._nonInteractiveOpacity : 1
             }
         }
-        // ══ TTS MOUSE COORDINATE READOUT — يتتبع الماوس فوق الخريطة، يعرض
-        //    Lat/Lon/Alt حي (زي شريط Mission Planner)، بدون التأثير على النقر
-        //    العادي بالخريطة (acceptedButtons: Qt.NoButton يسمح للنقر يمر تحته)
         TTSHoverTerrainQuery {
             id: ttsTerrainQuery
             onTerrainAltitudeReceived: (success, altitude) => {
                 ttsCoordTracker._hoverAlt = success ? altitude : null
             }
         }
-        // TTS: استعلام مستقل لتعبئة ارتفاع أي نقطة مهمة جديدة تلقائياً بارتفاع
-        // الأرض (AMSL)، بدل الرقم الافتراضي الثابت — منفصل عن ttsTerrainQuery
-        // فوق (المستخدم لصندوق الماوس الحي) عشان ما يصير تضارب بالإشارات.
         TTSHoverTerrainQuery {
             id: ttsNewItemTerrainQuery
-            property var pendingItem: null
+            property var _queue: []
+            property bool _busy: false
+            property var _altMap: ({})
+            function enqueue(item, coord, offset) {
+                _queue.push({ item: item, lat: coord.latitude, lon: coord.longitude, offset: offset })
+                if (!_busy) _processNext()
+            }
+            function _processNext() {
+                if (_queue.length === 0) { _busy = false; return }
+                _busy = true
+                var entry = _queue[0]
+                requestAltitude(entry.lat, entry.lon)
+            }
             onTerrainAltitudeReceived: (success, altitude) => {
-                if (success && ttsNewItemTerrainQuery.pendingItem && ttsNewItemTerrainQuery.pendingItem.specifiesAltitude) {
-                    // TTS: الارتفاع النهائي = ارتفاع الأرض (Terrain AMSL) + القيمة
-                    // الافتراضية المضبوطة بـ "Waypoints Altitude" (400 مثلاً)،
-                    // بدل استبدال الرقم بالكامل — نفس مصدر الرقم الافتراضي
-                    // (defaultMissionItemAltitude.rawValue) بدون تخمين.
-                    var defaultOffset = QGroundControl.settingsManager.appSettings.defaultMissionItemAltitude.rawValue
-                    ttsNewItemTerrainQuery.pendingItem.altitudeFrame = QGroundControl.AltitudeFrameAbsolute
-                    ttsNewItemTerrainQuery.pendingItem.altitude.rawValue = altitude + defaultOffset
+                if (_queue.length > 0) {
+                    var entry = _queue.shift()
+                    if (success && entry.item && entry.item.specifiesAltitude) {
+                        var offset = entry.offset >= 0
+                                     ? entry.offset
+                                     : QGroundControl.settingsManager.appSettings.defaultMissionItemAltitude.rawValue
+                        var finalAlt = altitude + offset
+                        entry.item.altitudeFrame = QGroundControl.AltitudeFrameAbsolute
+                        entry.item.altitude.rawValue = finalAlt
+                        _altMap[entry.item.sequenceNumber] = { alt: finalAlt, frame: QGroundControl.AltitudeFrameAbsolute }
+                    }
                 }
-                ttsNewItemTerrainQuery.pendingItem = null
+                _processNext()
+            }
+        }
+        Connections {
+            id: ttsAltSaver
+            target: _missionController.currentPlanViewItem && _missionController.currentPlanViewItem.altitude
+                    ? _missionController.currentPlanViewItem.altitude : null
+            function onRawValueChanged() {
+                var item = _missionController.currentPlanViewItem
+                if (!item || !item.specifiesAltitude) return
+                var defAlt = QGroundControl.settingsManager.appSettings.defaultMissionItemAltitude.rawValue
+                if (Math.abs(item.altitude.rawValue - defAlt) > 0.1) {
+                    ttsNewItemTerrainQuery._altMap[item.sequenceNumber] = { alt: item.altitude.rawValue, frame: item.altitudeFrame }
+                }
+            }
+        }
+        Connections {
+            id: ttsCommandWatcher
+            target: _missionController.currentPlanViewItem ? _missionController.currentPlanViewItem : null
+            function onCommandChanged() {
+                ttsCommandDelayTimer._retryCount = 0
+                ttsCommandDelayTimer.restart()
+            }
+        }
+        Timer {
+            id: ttsCommandDelayTimer
+            interval: 300
+            repeat: false
+            property int _retryCount: 0
+            onTriggered: {
+                var item = _missionController.currentPlanViewItem
+                if (!item || !item.specifiesAltitude) { _retryCount = 0; return }
+                var saved = ttsNewItemTerrainQuery._altMap[item.sequenceNumber]
+                if (saved) {
+                    item.altitudeFrame = saved.frame
+                    item.altitude.rawValue = saved.alt
+                    if (_retryCount < 2) {
+                        _retryCount++
+                        ttsCommandDelayTimer.restart()
+                        return
+                    }
+                } else if (item.coordinate && item.coordinate.isValid) {
+                    var offset = item.isTakeoffItem ? ttsTakeoffAltOffset() : undefined
+                    ttsApplyTerrainAltitude(item, item.coordinate, offset)
+                }
+                _retryCount = 0
+            }
+        }
+        Timer {
+            id: ttsLandDelayTimer
+            interval: 400
+            repeat: false
+            property var _item: null
+            property var _coord: null
+            onTriggered: {
+                if (_item && _item.specifiesAltitude && _coord) {
+                    ttsApplyTerrainAltitude(_item, _coord)
+                }
+                _item = null
             }
         }
         Timer {
             id: ttsTerrainDebounce
-            interval: 150   // تأخير بسيط لتفادي إغراق نظام Terrain Query بطلب لكل بكسل
+            interval: 150
             repeat: false
             onTriggered: {
                 if (ttsCoordTracker._hoverCoord) {
@@ -465,11 +551,10 @@ Item {
             propagateComposedEvents: true
             z: QGroundControl.zOrderWidgets + 99
             property var  _hoverCoord: null
-            property var  _hoverAlt:   null   // ارتفاع الأرض (متر AMSL) — null حتى توصل النتيجة
+            property var  _hoverAlt:   null
             onPositionChanged: (mouse) => {
                 ttsCoordTracker._hoverCoord = editorMap.toCoordinate(Qt.point(mouse.x, mouse.y), false)
                 ttsCoordTracker._hoverAlt = null
-                // TTS: تعبئة Facts التحويل من مصدر التغيّر مباشرة
                 ttsHoverPos.initValues()
                 ttsTerrainDebounce.restart()
             }
@@ -478,16 +563,9 @@ Item {
                 ttsCoordTracker._hoverAlt = null
             }
         }
-        // TTS: محوّل QGC الأصلي — كتابة coordinate تملأ zone/hemisphere/
-        //      easting/northing/mgrs تلقائياً عبر QGCGeo. لا حساب مستقل.
         TransformPositionController {
             id: ttsHoverPos
             coordinate: ttsCoordTracker._hoverCoord ? ttsCoordTracker._hoverCoord : QtPositioning.coordinate()
-            // TTS: setCoordinate() تخزّن الإحداثي فقط — initValues() هي التي
-            //      تملأ zone/hemisphere/easting/northing/mgrs (مؤكد من
-            //      TransformPositionController.cc). ولأن الإشارة لا تُبعث عند
-            //      أول انتقال (invalid→valid) بسبب حارس wasInvalid، نستدعيها
-            //      من مصدر التغيّر نفسه أدناه بدل الاعتماد على الإشارة.
             onCoordinateChanged: initValues()
             Component.onCompleted: initValues()
         }
@@ -515,12 +593,169 @@ Item {
                       ? _root.ttsFormatCoord(ttsCoordTracker._hoverCoord) +
                         "   ALT: " + (ttsCoordTracker._hoverAlt !== null
                                       ? QGroundControl.unitsConversion.metersToAppSettingsVerticalDistanceUnits(ttsCoordTracker._hoverAlt).toFixed(1) + " " + QGroundControl.unitsConversion.appSettingsVerticalDistanceUnitsString
-                                      : "…")
+                                      : "…") +
+                        _root.ttsDistFromHome(ttsCoordTracker._hoverCoord)
                       : ""
             }
         }
-        // ══ END TTS MOUSE COORDINATE READOUT ═════════════════════════════
-        // ══ TTS ZOOM CONTROL (+/-) — floating zoom buttons over the plan map ══
+
+        // ── TTS PERMANENT PITCH READOUT ─────────────────────────────────
+        //     Always visible when a vehicle is connected.
+        //     Shows live IMU pitch so the user can adjust the launcher
+        //     angle without needing to ARM first.
+        Rectangle {
+            id:      pitchReadoutBox
+            visible: _root._vOk
+            z:       QGroundControl.zOrderWidgets + 100
+            anchors.top:          editorMap.top
+            anchors.right:        editorMap.right
+            anchors.topMargin:    _toolsMargin
+            anchors.rightMargin:  editorMap._rightToolWidth + _toolsMargin
+            width:   pitchReadoutRow.implicitWidth + ScreenTools.defaultFontPixelWidth * 2
+            height:  pitchReadoutRow.implicitHeight + ScreenTools.defaultFontPixelHeight * 0.6
+            radius:  4
+            color:   "#FFFFFF"
+            border.color: "#00FF88"
+            border.width: 1.5
+
+            Row {
+                id: pitchReadoutRow
+                anchors.centerIn: parent
+                spacing: ScreenTools.defaultFontPixelWidth * 0.6
+                Text {
+                    text: qsTr("PITCH")
+                    font.pixelSize: ScreenTools.defaultFontPixelHeight * 0.7
+                    font.family: "monospace"; font.bold: true; color: "#4A6070"
+                    anchors.verticalCenter: parent.verticalCenter
+                }
+                Text {
+                    text: {
+                        var p = _root._vPitch
+                        return (p >= 0 ? "+" : "") + p.toFixed(1) + "°"
+                    }
+                    font.pixelSize: ScreenTools.defaultFontPixelHeight * 1.2
+                    font.bold: true; font.family: "monospace"; color: "#0A0C0E"
+                    anchors.verticalCenter: parent.verticalCenter
+                }
+            }
+        }
+
+        // ══════════════════════════════════════════════════════════════════
+        // ── TTS LAUNCHER PITCH OVERLAY (Plan View) ───────────────────────
+        //     Anchored below the white coord bar (ttsCoordBox).
+        //     Shows IMU pitch when aircraft is armed+stationary on launcher.
+        //     AUTO-ADJUST sets NAV_TAKEOFF param1 in the loaded plan.
+        //     UPLOAD sends the modified plan to the vehicle.
+        // ══════════════════════════════════════════════════════════════════
+        Rectangle {
+            id:      launcherPlanOverlay
+            visible: _root._onLauncher && !_root._launcherDismissed
+            z:       QGroundControl.zOrderWidgets + 101
+            anchors.centerIn:             editorMap
+            anchors.verticalCenterOffset: -ScreenTools.defaultFontPixelHeight * 5
+            width:   ScreenTools.defaultFontPixelWidth * 48
+            height:  ScreenTools.defaultFontPixelHeight * 11
+            radius:  4
+            color:   "#FFFFFF"
+            border.color: "#00FF88"
+            border.width: 2
+
+            Column {
+                id: launcherPlanCol
+                anchors.top: parent.top
+                anchors.topMargin: ScreenTools.defaultFontPixelHeight * 0.8
+                anchors.horizontalCenter: parent.horizontalCenter
+                width: parent.width - ScreenTools.defaultFontPixelWidth * 2
+                spacing: ScreenTools.defaultFontPixelHeight * 0.5
+
+                // Title
+                Row {
+                    spacing: ScreenTools.defaultFontPixelWidth * 0.6
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    Text {
+                        text: "⚙"
+                        font.pixelSize: ScreenTools.defaultFontPixelHeight * 1.1
+                        color: "#00CC6A"
+                        anchors.verticalCenter: parent.verticalCenter
+                    }
+                    Text {
+                        text: qsTr("LAUNCHER PITCH DETECTED")
+                        font.pixelSize: ScreenTools.defaultFontPixelHeight * 0.8
+                        font.bold: true; font.letterSpacing: 1.5; font.family: "monospace"
+                        color: "#0A0C0E"
+                        anchors.verticalCenter: parent.verticalCenter
+                    }
+                }
+
+                // Big pitch readout
+                Rectangle {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    width: ScreenTools.defaultFontPixelWidth * 26
+                    height: ScreenTools.defaultFontPixelHeight * 3
+                    color: "#F0FFF5"
+                    border.color: "#00CC6A"; border.width: 1; radius: 4
+                    Row {
+                        anchors.centerIn: parent
+                        spacing: ScreenTools.defaultFontPixelWidth * 0.8
+                        Text {
+                            text: qsTr("PITCH")
+                            font.pixelSize: ScreenTools.defaultFontPixelHeight * 0.8
+                            font.family: "monospace"; font.bold: true; color: "#4A6070"
+                            anchors.verticalCenter: parent.verticalCenter
+                        }
+                        Text {
+                            text: {
+                                var p = _root._vPitch
+                                var sign = p >= 0 ? "+" : "-"
+                                var num = Math.abs(p).toFixed(1)
+                                while (num.length < 4) num = " " + num
+                                return sign + num + "°"
+                            }
+                            font.pixelSize: ScreenTools.defaultFontPixelHeight * 1.8
+                            font.bold: true; font.family: "monospace"; color: "#0A0C0E"
+                            anchors.verticalCenter: parent.verticalCenter
+                        }
+                    }
+                }
+
+                // Description with live pitch value
+                Text {
+                    width: parent.width
+                    text: {
+                        var p = Math.abs(_root._vPitch).toFixed(1)
+                        return qsTr("Set Takeoff Angle PITCH to ") + p + "°" + qsTr(" before launch.")
+                    }
+                    font.pixelSize: ScreenTools.defaultFontPixelHeight * 0.75
+                    font.family: "monospace"; font.bold: true; color: "#0A0C0E"
+                    horizontalAlignment: Text.AlignHCenter
+                    wrapMode: Text.WordWrap
+                }
+            }
+
+            // DISMISS — anchored to bottom, independent from Column
+            Rectangle {
+                anchors.bottom: parent.bottom
+                anchors.bottomMargin: ScreenTools.defaultFontPixelHeight * 0.6
+                anchors.horizontalCenter: parent.horizontalCenter
+                width: ScreenTools.defaultFontPixelWidth * 10
+                height: ScreenTools.defaultFontPixelHeight * 2
+                color: launcherDismissMA.containsMouse ? "#F0F0F0" : "#FAFAFA"
+                border.color: "#4A6070"; border.width: 1; radius: 4
+                Behavior on color { ColorAnimation { duration: 120 } }
+                Text {
+                    anchors.centerIn: parent
+                    text: qsTr("DISMISS")
+                    font.pixelSize: ScreenTools.defaultFontPixelHeight * 0.7
+                    font.bold: true; font.family: "monospace"; color: "#4A6070"
+                }
+                MouseArea {
+                    id: launcherDismissMA
+                    anchors.fill: parent; hoverEnabled: true
+                    onClicked: _root._launcherDismissed = true
+                }
+            }
+        }
+
         Rectangle {
             id:                   ttsPlanZoom
             z:                    QGroundControl.zOrderWidgets
@@ -581,9 +816,6 @@ Item {
                 }
             }
         }
-        // ══ END TTS ZOOM CONTROL ═════════════════════════════════════════
-        //-----------------------------------------------------------
-        // Left tool strip
         ToolStrip {
             id: toolStrip
             anchors.margins: _toolsMargin
@@ -598,13 +830,6 @@ Item {
                 property: "checked"
                 value: _addWaypointOnClick
             }
-            /* TTS: ROI button removed — Binding commented out
-            Binding {
-                target: roiButton
-                property: "checked"
-                value: _addROIOnClick
-            }
-            */
             ToolStripActionList {
                 id: toolStripActionList
                 model: [
@@ -618,21 +843,6 @@ Item {
                             insertTakeoffItemAfterCurrent()
                         }
                     },
-                    /* TTS: Pattern button removed by request
-                    ToolStripAction {
-                        objectName: "planToolStrip_patternButton"
-                        text: _singleComplexItem ? _missionController.complexMissionItems[0].translatedName : qsTr("Pattern")
-                        iconSource: "/qmlimages/MapDrawShape.svg"
-                        enabled: _missionController.flyThroughCommandsAllowed
-                        visible: toolStrip._isMissionLayer
-                        dropPanelComponent: _singleComplexItem ? undefined : patternDropPanel
-                        onTriggered: {
-                            if (_singleComplexItem) {
-                                insertComplexItemAfterCurrent(_missionController.complexMissionItems[0].canonicalName)
-                            }
-                        }
-                    },
-                    */
                     ToolStripAction {
                         id: waypointButton
                         objectName: "planToolStrip_waypointButton"
@@ -643,34 +853,6 @@ Item {
                         checkable: true
                         onTriggered: { _addWaypointOnClick = !_addWaypointOnClick; if (_addWaypointOnClick) _addROIOnClick = false }
                     },
-                    /* TTS: ROI button removed by request
-                    ToolStripAction {
-                        id: roiButton
-                        objectName: "planToolStrip_roiButton"
-                        text: _missionController.isROIActive ? qsTr("Cancel ROI") : qsTr("ROI")
-                        iconSource: "/qmlimages/roi.svg"
-                        enabled: _missionController.isInsertROIValid
-                        visible: toolStrip._isMissionLayer && _planMasterController.controllerVehicle.supports.roiMode
-                        checkable: true
-                        onTriggered: { _addROIOnClick = !_addROIOnClick; if (_addROIOnClick) _addWaypointOnClick = false }
-                    },
-                    */
-                    /* TTS: Land button removed by request
-                    ToolStripAction {
-                        objectName: "planToolStrip_landButton"
-                        text: _planMasterController.controllerVehicle.multiRotor
-                                    ? qsTr("Return")
-                                    : _missionController.isInsertLandValid && _missionController.hasLandItem
-                                      ? qsTr("Alt Land")
-                                      : qsTr("Land")
-                        iconSource: "/res/rtl.svg"
-                        enabled: _missionController.isInsertLandValid
-                        visible: toolStrip._isMissionLayer
-                        onTriggered: {
-                            insertLandItemAfterCurrent()
-                        }
-                    },
-                    */
                     ToolStripAction {
                         text: qsTr("Stats")
                         iconSource: "/res/chevron-double-right.svg"
@@ -698,7 +880,6 @@ Item {
             editorMap: editorMap
             onEditingLayerChangeRequested: (layer) => _editingLayer = layer
         }
-        // Layer switching icons — only active icon visible; click to expand choices leftward
         Item {
             id:                     layerSwitcher
             anchors.right:          rightPanel.left
@@ -734,13 +915,11 @@ Item {
                 collapseTimer.stop()
                 rightPanel.selectLayer(nodeType)
             }
-            // Row laid out right-to-left: active icon on the right, choices expand left
             Row {
                 id:             layerRow
                 anchors.right:  parent.right
                 spacing:        layerSwitcher._spacing
                 layoutDirection: Qt.RightToLeft
-                // Active layer button (always visible)
                 Rectangle {
                     width:  layerSwitcher._layerButtonSize
                     height: width
@@ -758,7 +937,6 @@ Item {
                         onClicked:    layerSwitcher.toggle()
                     }
                 }
-                // Choice buttons (only layers that are NOT the current one)
                 Repeater {
                     model: layerSwitcher._layers.filter(l => l.layer !== _editingLayer)
                     Rectangle {
@@ -792,9 +970,6 @@ Item {
             anchors.right: rightPanel.left
             anchors.bottom: parent.bottom
             spacing: 0
-            // TTS: الشريط الأصلي (Terrain/Mission Stats) مخفي دائماً بطلب صريح —
-            // الكود القديم معلّق أدناه بدل حذفه (قاعدة رقم 8 بمشروع TTS)
-            // visible: !hidden && _editingLayer == _layerMission && QGroundControl.corePlugin.options.showMissionStatus
             visible: false
             readonly property bool hidden: _planViewSettings.showMissionItemStatus.rawValue ? false : true
             function showMissionStatus() {
@@ -891,8 +1066,6 @@ Item {
                 planMasterController: _root._planMasterController
             }
         }
-        // ══ TTS WAYPOINT TABLE — جدول تعديل نقاط المهمة (إضافة، لا يحذف اللوحة اليمنى) ══
-        // ثابت دائماً (لا طي/فتح)، ملتصق مباشرة بشريط الأدوات يسار واللوحة اليمنى (بدون مسافة)
         WaypointTable {
             id:                   wpTable
             z:                    QGroundControl.zOrderWidgets + 1
@@ -905,9 +1078,7 @@ Item {
             planMasterController: _planMasterController
             map:                  editorMap
         }
-        // ══ END TTS WAYPOINT TABLE ═══════════════════════════════════════
     }
-        //- ToolStrip ToolStripDropPanel Components
     Component {
         id: patternDropPanel
         ColumnLayout {
@@ -924,7 +1095,7 @@ Item {
                     }
                 }
             }
-        } // Column
+        }
     }
     QGCPopupDialogFactory {
         id: promptForPlanUsageOnVehicleChangePopupFactory

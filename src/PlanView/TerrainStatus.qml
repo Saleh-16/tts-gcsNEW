@@ -32,6 +32,59 @@ Rectangle {
     /// zooming into a horizontal distance span).
     property alias terrainProfile: terrainProfile
 
+    /// The full mission span on the X axis, in display units - exactly what
+    /// axisX uses when no external override is active.
+    ///
+    /// Exposed because a viewer that drives externalMinX/externalMaxX freezes
+    /// axisX at whatever it sets. If such a viewer captured the full range once
+    /// at startup, it would never notice the mission getting longer, and its
+    /// "reset zoom" would restore a stale range that clips the new waypoints
+    /// with no way to recover short of reopening the window. Binding to this
+    /// instead keeps the viewer's idea of "full range" live.
+    readonly property real fullRangeMaxX:
+        _unitsConversion.metersToAppSettingsHorizontalDistanceUnits(_missionTotalDistance)
+
+    /// Series colours, published so a viewer can build a legend that cannot
+    /// drift out of step with what is actually plotted.
+    readonly property color seriesTerrainColor:   terrainSeries.color
+    readonly property color seriesFlightColor:    flightSeries.color
+    readonly property color seriesCollisionColor: collisionSeries.color
+    readonly property color seriesMissingColor:   missingSeries.color
+
+    /// True when a confirmed terrain collision falls inside the visible X range.
+    ///
+    /// Kept as an explicit flag because the red line alone is not a reliable
+    /// signal once zoomed: it is drawn at flight altitude, so a viewer that
+    /// auto-fits the Y axis can still clip it, and it carries no label of its
+    /// own. A viewer can surface this as a badge.
+    readonly property bool collisionInView:
+        _rangeHasSegmentIn(collisionSeries, chart.axisX.min, chart.axisX.max)
+
+    /// True when a stretch with no terrain data falls inside the visible X
+    /// range.
+    ///
+    /// This one genuinely does vanish when zoomed. TerrainProfile.cc draws the
+    /// missing-data line as a flat bar along the bottom of the plot at the
+    /// WHOLE mission's minimum altitude (_addMissingPoints), not at any real
+    /// altitude, so as soon as the Y axis fits a zoomed-in span that bar falls
+    /// outside it. Losing it silently is worse than losing the collision line,
+    /// because it marks the stretch where every altitude shown cannot be
+    /// trusted at all.
+    readonly property bool missingDataInView:
+        _rangeHasSegmentIn(missingSeries, chart.axisX.min, chart.axisX.max)
+
+    /// Height of the strip along the bottom of this control that the waypoint
+    /// index labels occupy.
+    ///
+    /// They are anchored to the bottom of the marker lines, which end at the
+    /// bottom of the plot area - so the strip starts wherever marginBottom
+    /// puts that edge, plus room for the label itself. Published because a
+    /// viewer that lays a MouseArea over this control has to leave that strip
+    /// uncovered, or the labels stop being clickable. Deriving it here means
+    /// the two cannot drift apart when the margin changes.
+    readonly property real markerLabelZoneHeight:
+        chart.marginBottom + ScreenTools.defaultFontPixelHeight * 1.6
+
     /// Optional external override for the X axis visible range, used by
     /// standalone viewers (like ElevationGraphWindow) to implement zoom
     /// without duplicating this chart. When either is NaN (the default),
@@ -49,8 +102,6 @@ Rectangle {
 
     property real _margins:                 ScreenTools.defaultFontPixelWidth / 2
     property var  _visualItems:             missionController.visualItems
-    property real _altRange:                _maxAMSLAltitude - _minAMSLAltitude
-    property real _indicatorSpacing:        5
     property real _minAMSLAltitude:         isNaN(terrainProfile.minAMSLAlt) ? 0 : terrainProfile.minAMSLAlt
     property real _maxAMSLAltitude:         isNaN(terrainProfile.maxAMSLAlt) ? 100 : terrainProfile.maxAMSLAlt
     property real _missionTotalDistance:    isNaN(missionController.missionTotalDistance) ? 100 : missionController.missionTotalDistance
@@ -106,6 +157,45 @@ Rectangle {
     /// fit vertically before they start crowding each other.
     property int  _targetTickCountY:        6
 
+    /// Floor on the altitude tick step, in display units.
+    ///
+    /// Without it, zooming far enough drives the step below 1 and the labels
+    /// gain a second decimal - which is false precision on an AMSL scale (no
+    /// aircraft holds a quarter of a metre) and costs a character in every
+    /// label, on the axis that has the least room for one.
+    property real _minTickStepY:            1
+
+    /// The widest label each axis will print at the current range. Measured
+    /// with real font metrics rather than counted in characters, because
+    /// character width varies with the font the platform actually resolves.
+    readonly property string _widestAxisYLabel: {
+        var d = axisY.labelDecimals
+        var a = axisY.min.toFixed(d)
+        var b = axisY.max.toFixed(d)
+        return a.length >= b.length ? a : b
+    }
+
+    readonly property string _widestAxisXLabel: {
+        var d = axisX.labelDecimals
+        var a = axisX.min.toFixed(d)
+        var b = axisX.max.toFixed(d)
+        return a.length >= b.length ? a : b
+    }
+
+    TextMetrics {
+        id:             axisYLabelMetrics
+        font.family:    ScreenTools.fixedFontFamily
+        font.pointSize: ScreenTools.smallFontPointSize
+        text:           root._widestAxisYLabel
+    }
+
+    TextMetrics {
+        id:             axisXLabelMetrics
+        font.family:    ScreenTools.fixedFontFamily
+        font.pointSize: ScreenTools.smallFontPointSize
+        text:           root._widestAxisXLabel
+    }
+
     /// Largest "nice" step (1 / 2 / 2.5 / 5 x 10^n) that is no bigger than an
     /// even split of the span into targetCount parts. Used by both axes so that
     /// tick density adapts to zoom: as the visible range shrinks, the step
@@ -125,7 +215,10 @@ Rectangle {
     /// 355 m span asks for 44 and drops straight to 20, printing 18 labels
     /// where 15 were wanted. 2.5 gives the in-between step (25) and keeps the
     /// values round.
-    function _niceTickStep(span, targetCount) {
+    ///
+    /// minStep is optional and clamps the result from below, for axes where a
+    /// finer step would be meaningless precision rather than useful detail.
+    function _niceTickStep(span, targetCount, minStep) {
         if (!(span > 0) || !(targetCount > 0)) {
             return 1
         }
@@ -133,7 +226,8 @@ Rectangle {
         var mag   = Math.pow(10, Math.floor(Math.log(rough) / Math.LN10))
         var norm  = rough / mag                     // 1 <= norm < 10
         var nice  = norm < 2 ? 1 : norm < 2.5 ? 2 : norm < 5 ? 2.5 : 5
-        return nice * mag
+        var step  = nice * mag
+        return (minStep !== undefined && step < minStep) ? minStep : step
     }
 
     /// When true, and an external X range is active (i.e. the viewer is
@@ -164,13 +258,45 @@ Rectangle {
     property real _autoMinY: NaN
     property real _autoMaxY: NaN
 
-    onAutoFitYChanged:          _updateAutoFitY()
-    onExternalMinXChanged:      _updateAutoFitY()
-    onExternalMaxXChanged:      _updateAutoFitY()
-    onAutoFitYExpansionChanged: _updateAutoFitY()
+    /// Cached point arrays for the three series that carry real altitude data.
+    /// Rebuilt only when the profile changes, never while zooming: reading a
+    /// series back point-by-point through at() is O(n), and on a long mission
+    /// n runs into the thousands. A single wheel notch changes three properties
+    /// that all feed the fit, and a trackpad sends those events continuously,
+    /// so recomputing the arrays per event is what makes zooming stutter.
+    property var _cachedFitPoints: null
 
-    /// Returns the series' points as a plain array, tolerating either the
-    /// list-style 'points' property or the indexed at()/count API.
+    /// Coalesces fit requests into one pass per event loop turn. A zoom
+    /// changes externalMinX, externalMaxX and autoFitYExpansion together;
+    /// without this the fit would run up to three times per notch, and the
+    /// first two runs would be against a half-updated range (new min, old max)
+    /// whose result is thrown away a moment later - visible as a flicker on
+    /// the altitude axis.
+    property bool _autoFitPending: false
+
+    onAutoFitYChanged:          _scheduleAutoFitY()
+    onExternalMinXChanged:      _scheduleAutoFitY()
+    onExternalMaxXChanged:      _scheduleAutoFitY()
+    onAutoFitYExpansionChanged: _scheduleAutoFitY()
+
+    function _scheduleAutoFitY() {
+        if (_autoFitPending) {
+            return
+        }
+        _autoFitPending = true
+        Qt.callLater(function() {
+            root._autoFitPending = false
+            root._updateAutoFitY()
+        })
+    }
+
+    /// Returns the series' points as a plain array.
+    ///
+    /// QtGraphs' QXYSeries exposes count as a property and at() as
+    /// Q_INVOKABLE, but its points() accessor is plain C++ and is NOT visible
+    /// from QML (unlike the old QtCharts, where points was a property). The
+    /// property branch below therefore never runs on current Qt; it is kept
+    /// only so this still works if a future Qt publishes it.
     function _seriesPoints(series) {
         if (!series) {
             return []
@@ -185,15 +311,49 @@ Rectangle {
         return pts
     }
 
-    /// Expands acc.min / acc.max to cover every part of 'series' that lies
+    /// True if any drawn part of 'series' crosses [lo, hi].
+    ///
+    /// Tests SEGMENTS, not vertices. A collision or missing-data run is emitted
+    /// as just two points, one at each end, so a vertex test reports nothing
+    /// the moment you zoom into the middle of such a run - the line spans the
+    /// whole screen while both of its endpoints sit outside the range. Same
+    /// long-segment case _scanPointsY already handles for the axis fit.
+    function _rangeHasSegmentIn(series, lo, hi) {
+        if (!series || !(hi > lo)) {
+            return false
+        }
+        var n = series.count
+        if (n === 0) {
+            return false
+        }
+        if (n === 1) {
+            var only = series.at(0)
+            return !isNaN(only.x) && only.x >= lo && only.x <= hi
+        }
+        var prev = null
+        for (var i = 0; i < n; i++) {
+            var p = series.at(i)
+            var ok = !isNaN(p.x) && !isNaN(p.y)     // NaN separates disjoint runs
+            if (ok && prev) {
+                var x0 = Math.min(prev.x, p.x)
+                var x1 = Math.max(prev.x, p.x)
+                if (x0 <= hi && x1 >= lo) {
+                    return true
+                }
+            }
+            prev = ok ? p : null
+        }
+        return false
+    }
+
+    /// Expands acc.min / acc.max to cover every part of 'pts' that lies
     /// within the currently visible X range. Works segment by segment and
     /// linearly interpolates where a segment crosses a range boundary, so a
     /// single long segment spanning the whole view is still measured correctly
     /// even when it has no sample point inside the range - which is exactly
     /// the case at high zoom levels.
-    function _scanSeriesY(series, lo, hi, acc) {
-        var pts = _seriesPoints(series)
-        if (pts.length === 0) {
+    function _scanPointsY(pts, lo, hi, acc) {
+        if (!pts || pts.length === 0) {
             return
         }
 
@@ -203,7 +363,7 @@ Rectangle {
         }
 
         if (pts.length === 1) {
-            if (pts[0].x >= lo && pts[0].x <= hi) {
+            if (!isNaN(pts[0].x) && !isNaN(pts[0].y) && pts[0].x >= lo && pts[0].x <= hi) {
                 include(pts[0].y)
             }
             return
@@ -212,21 +372,29 @@ Rectangle {
         for (var i = 0; i < pts.length - 1; i++) {
             var p0 = pts[i]
             var p1 = pts[i + 1]
+
+            // TerrainProfile.cc separates disjoint runs with NaN points. Skip
+            // any segment touching one: there is no line drawn across a break,
+            // so there is nothing to measure. Checked explicitly rather than
+            // relying on NaN comparisons quietly failing every test below,
+            // which is correct today but would flip silently if the range
+            // check were ever rewritten.
+            if (isNaN(p0.x) || isNaN(p0.y) || isNaN(p1.x) || isNaN(p1.y)) {
+                continue
+            }
+
             var x0 = Math.min(p0.x, p1.x)
             var x1 = Math.max(p0.x, p1.x)
-
             var segLo = Math.max(x0, lo)
             var segHi = Math.min(x1, hi)
             if (segLo > segHi) {
                 continue    // segment entirely outside the visible range
             }
-
             if (p1.x === p0.x) {
                 include(p0.y)
                 include(p1.y)
                 continue
             }
-
             var slope = (p1.y - p0.y) / (p1.x - p0.x)
             include(p0.y + (segLo - p0.x) * slope)
             include(p0.y + (segHi - p0.x) * slope)
@@ -240,11 +408,29 @@ Rectangle {
             return
         }
 
+        // missingSeries is deliberately NOT part of the fit. Its points are not
+        // altitudes: TerrainProfile.cc::_addMissingPoints draws them as a flat
+        // bar along the bottom of the plot at the whole mission's minimum
+        // altitude, purely as a marker. Feeding that into the fit would pin the
+        // lower bound to the full-mission minimum and flatten the zoom to
+        // nothing over any stretch with no terrain data. The warning is kept
+        // instead through missingDataInView, which a viewer shows as a badge.
+        //
+        // collisionSeries IS included: _addCollisionPoints uses the segment's
+        // real coord1/coord2 AMSL altitudes, so it is genuine data drawn thick
+        // over the flight path, not a marker.
+        if (_cachedFitPoints === null) {
+            _cachedFitPoints = [
+                _seriesPoints(terrainSeries),
+                _seriesPoints(flightSeries),
+                _seriesPoints(collisionSeries)
+            ]
+        }
+
         var acc = { min: Number.POSITIVE_INFINITY, max: Number.NEGATIVE_INFINITY }
-        _scanSeriesY(terrainSeries,   externalMinX, externalMaxX, acc)
-        _scanSeriesY(flightSeries,    externalMinX, externalMaxX, acc)
-        _scanSeriesY(collisionSeries, externalMinX, externalMaxX, acc)
-        _scanSeriesY(missingSeries,   externalMinX, externalMaxX, acc)
+        for (var i = 0; i < _cachedFitPoints.length; i++) {
+            _scanPointsY(_cachedFitPoints[i], externalMinX, externalMaxX, acc)
+        }
 
         if (!isFinite(acc.min) || !isFinite(acc.max)) {
             _autoMinY = NaN
@@ -256,13 +442,11 @@ Rectangle {
         // Flat sections would collapse to a zero-height axis, so give them a
         // small artificial span centered on the value.
         var pad = span > 0 ? span * _autoFitYPadding : Math.max(1, Math.abs(acc.max) * 0.01)
-
         // Grow symmetrically about the centre of the data, so zooming out
         // reveals altitude headroom on both sides rather than sliding the
         // profile towards one edge.
         var centre   = (acc.min + acc.max) / 2
         var halfSpan = (span / 2 + pad) * Math.max(1, autoFitYExpansion)
-
         _autoMinY = centre - halfSpan
         _autoMaxY = centre + halfSpan
     }
@@ -278,9 +462,14 @@ Rectangle {
     /// markers stayed frozen at their full-mission positions and no longer
     /// lined up with the plotted lines.
     ///
-    /// The horizontalScale multiply matches what TerrainProfile.cc does when
-    /// it builds the series points, so marker x and series x live in the same
-    /// unit space even when the user displays distances in feet.
+    /// The metres-to-display-units conversion is read from unitsConversion
+    /// rather than from terrainProfile.horizontalScale, even though the two
+    /// always hold the same number. horizontalScale is declared MEMBER with no
+    /// NOTIFY (TerrainProfile.h), so a binding on it is never re-evaluated:
+    /// switching the distance unit would move axisX (which reads
+    /// unitsConversion directly) while leaving every marker at its old-unit
+    /// position, and Qt would log a non-notifiable-property warning for the
+    /// dependency.
     function _xForDistance(distanceMeters) {
         if (!chart || !chart.axisX) {
             return 0
@@ -290,7 +479,7 @@ Rectangle {
         if (!(hi > lo)) {
             return 0
         }
-        var scaled = distanceMeters * terrainProfile.horizontalScale
+        var scaled = _unitsConversion.metersToAppSettingsHorizontalDistanceUnits(distanceMeters)
         return chart.plotArea.width * ((scaled - lo) / (hi - lo))
     }
 
@@ -301,7 +490,7 @@ Rectangle {
         if (!chart || !chart.axisX) {
             return false
         }
-        var scaled = distanceMeters * terrainProfile.horizontalScale
+        var scaled = _unitsConversion.metersToAppSettingsHorizontalDistanceUnits(distanceMeters)
         return scaled >= chart.axisX.min && scaled <= chart.axisX.max
     }
 
@@ -334,10 +523,25 @@ Rectangle {
             GraphsView {
                 id:                 chart
                 anchors.fill:       parent
-                marginTop:          ScreenTools.defaultFontPixelHeight / 2  // Fixes top clipping problem
-                marginRight:        ScreenTools.defaultFontPixelWidth * 2   // Prevents clipping last tick mark
-                marginBottom:       -ScreenTools.defaultFontPixelHeight / 2 // For some reason you can't get rid of bottom margin by setting to 0
-                marginLeft:         0
+
+                // Every margin that carries axis labels is sized from measured
+                // text, not from a fixed guess.
+                //
+                // The left margin used to be 0, which let QtGraphs draw the
+                // altitude labels outside the item, where the Flickable's clip
+                // cut them off. It held only as long as the labels stayed six
+                // characters: zoom in far enough, the tick step drops below a
+                // metre, a second decimal appears, and 1170.00 renders as
+                // 170.00 - a silent thousand-metre error on an altitude axis.
+                //
+                // The bottom margin was negative for the same "just make it go
+                // away" reason, and cost the bottom of every distance label.
+                // The right margin was a fixed two-character guess that fails
+                // once the last label is longer than that.
+                marginTop:    ScreenTools.defaultFontPixelHeight / 2   // Fixes top clipping problem
+                marginLeft:   axisYLabelMetrics.width  + ScreenTools.defaultFontPixelWidth * 0.6
+                marginBottom: axisXLabelMetrics.height + ScreenTools.defaultFontPixelHeight * 0.2
+                marginRight:  axisXLabelMetrics.width / 2 + ScreenTools.defaultFontPixelWidth * 0.6
 
                 theme: GraphsTheme {
                     colorScheme:                qgcPal.globalTheme === QGCPalette.Light ? GraphsTheme.ColorScheme.Light : GraphsTheme.ColorScheme.Dark
@@ -362,18 +566,14 @@ Rectangle {
                 axisX: ValueAxis {
                     id:                         axisX
                     min:                        isNaN(root.externalMinX) ? 0 : root.externalMinX
-                    max:                        isNaN(root.externalMaxX)
-                                                    ? _unitsConversion.metersToAppSettingsHorizontalDistanceUnits(_missionTotalDistance)
-                                                    : root.externalMaxX
+                    max:                        isNaN(root.externalMaxX) ? root.fullRangeMaxX : root.externalMaxX
                     lineVisible:                true
-
                     // Vertical grid lines removed: distance is read off the
                     // labels, and the waypoint marker lines already give the
                     // vertical references that matter. The horizontal grid
                     // (axisY) is kept as an altitude reference.
                     gridVisible:                false
                     subGridVisible:             false
-
                     // Adaptive tick density: the step is derived from the currently
                     // visible span rather than being a fixed fraction of it, so zooming
                     // in produces more, finer labels instead of the same 5 labels
@@ -399,17 +599,15 @@ Rectangle {
                                                         ? root._autoMaxY
                                                         : _unitsConversion.metersToAppSettingsVerticalDistanceUnits(_maxAMSLAltitude)
                     lineVisible:                true
-
                     // Horizontal grid kept on: it is the altitude reference that
                     // makes the chart readable at a glance. Stated explicitly so
                     // it can't be lost if the theme default ever changes.
                     gridVisible:                true
-
                     // Same adaptive scheme as the X axis: round altitude steps
                     // that get finer as the visible altitude range shrinks,
                     // with the first tick snapped to a multiple of the step so
                     // labels stay round when min is not zero.
-                    tickInterval:               root._niceTickStep(max - min, root._targetTickCountY)
+                    tickInterval:               root._niceTickStep(max - min, root._targetTickCountY, root._minTickStepY)
                     tickAnchor:                 Math.ceil(min / axisY.tickInterval) * axisY.tickInterval
                     labelDecimals:              axisY.tickInterval >= 10 ? 0 : (axisY.tickInterval >= 1 ? 1 : 2)
                 }
@@ -417,6 +615,7 @@ Rectangle {
                 // The order of the LineSeries is important to work around nasty bugs in QtGraphs where series just don't display. If you put
                 // terrain and flight first you end up with cases where flight doesn't display no matter what other sorts of workarounds you try.
                 // Putting missing and collision first seems to prevent the problem.
+
                 LineSeries {
                     id:         missingSeries
                     color:      "yellow"
@@ -451,11 +650,15 @@ Rectangle {
                 missionController:  root.missionController
                 horizontalScale:    _unitsConversion.metersToAppSettingsHorizontalDistanceUnits(1)
                 verticalScale:      _unitsConversion.metersToAppSettingsVerticalDistanceUnits(1)
+
                 onProfileChanged:   {
                     terrainProfile.updateSeries(terrainSeries, flightSeries, missingSeries, collisionSeries)
-                    // Series points just changed, so any active vertical
-                    // auto-fit has to be recomputed against the new data.
-                    root._updateAutoFitY()
+                    // Series points just changed, so the cached arrays are
+                    // stale and any active vertical auto-fit has to be
+                    // recomputed against the new data. Order matters: drop the
+                    // cache first, then request the fit.
+                    root._cachedFitPoints = null
+                    root._scheduleAutoFitY()
                 }
 
                 Repeater {
@@ -524,12 +727,18 @@ Rectangle {
                             }
                         }
 
+                        // Complex-pattern entry/exit markers are centred on
+                        // their distance the same way the simple markers are.
+                        // Without the half-width shift they sit a fraction of a
+                        // line to the right of the position they mark, which is
+                        // invisible at 1px but obvious once the marker width
+                        // scales up on a high-DPI display.
                         Rectangle {
                             id:         complexItemEntry
                             height:     terrainProfile.height
                             width:      root._markerLineWidth
                             color:      root.markerLineColor
-                            x:          root._xForDistance(object.distanceFromStart)
+                            x:          root._xForDistance(object.distanceFromStart) - width / 2
                             visible:    complexItem.visible &&
                                         root._distanceInView(object.distanceFromStart)
 
@@ -548,7 +757,7 @@ Rectangle {
                             height:     terrainProfile.height
                             width:      root._markerLineWidth
                             color:      root.markerLineColor
-                            x:          root._xForDistance(object.distanceFromStart + object.complexDistance)
+                            x:          root._xForDistance(object.distanceFromStart + object.complexDistance) - width / 2
                             visible:    complexItem.visible &&
                                         root._distanceInView(object.distanceFromStart + object.complexDistance)
 

@@ -138,142 +138,14 @@ Rectangle {
         var u = QGroundControl.altitudeFrameExtraUnits(_curItem.altitudeFrame)
         return u ? "ALT (" + u + ")" : "ALT"
     }
-
-    // ── TTS: إدخال إحداثي مرن ────────────────────────────────────────────
-    //  الخانة تقبل أي صيغة، بغض النظر عن صيغة العرض المختارة:
-    //      MGRS       38QPJ 97076 85982
-    //      UTM كامل   38N 378039 2151567
-    //      UTM جزئي   38N 378039        (يحتفظ بالقيمة الأخرى الحالية)
-    //      زوج        24.7136, 46.6753  (يضبط المحورين معاً)
-    //      DMS        24 42 49.0 N   |   24°42'49"N
-    //      رقم        حسب الخانة وصيغة العرض، أو حسب الحرف لو وُجد
-    //
-    //  كل التحويلات بدوال QGC نفسها (setFromGeo / setFromUTM / setFromMGRS)
-    //  عبر TransformPositionController. وهي تستدعي initValues() وترجع للقيمة
-    //  السابقة عند فشل التحويل، فلا حاجة لتحقق مستقل من صحة الإحداثي ولا لأي
-    //  حساب إسقاط هنا.
-    function _commitCoord(item, ctl) {
-        var c = ctl.coordinate
-        if (!c || !c.isValid) return
-        // setFromUTM/setFromMGRS تبنيان QGeoCoordinate جديداً بلا ارتفاع،
-        // فنُبقي ارتفاع النقطة كما هو بدل تصفيره.
-        var alt = (item.coordinate && !isNaN(item.coordinate.altitude)) ? item.coordinate.altitude : 0
-        item.coordinate = QtPositioning.coordinate(c.latitude, c.longitude, alt)
+    function _setLat(item, v) {
+        if (!item || !item.coordinate) return
+        item.coordinate = QtPositioning.coordinate(v, item.coordinate.longitude, item.coordinate.altitude)
     }
-    /// د + ق/60 + ث/3600 — هذا تعريف صيغة DMS نفسها لا معادلة مشتقة، ولا
-    /// يوفّر QGC ولا Qt محلّلاً لها (QGCGeo فيه تحويلات UTM/MGRS فقط).
-    function _parseDms(str) {
-        var m = str.match(/^\s*(-?\d+(?:\.\d+)?)\s*[°d:\s]\s*(\d+(?:\.\d+)?)\s*['m:\s]?\s*(\d+(?:\.\d+)?)?\s*["s]?\s*([NSEW])?\s*$/i)
-        if (!m || m[2] === undefined) return null
-        var d  = parseFloat(m[1])
-        var mi = parseFloat(m[2])
-        var se = (m[3] !== undefined) ? parseFloat(m[3]) : 0
-        if (isNaN(d) || isNaN(mi) || isNaN(se)) return null
-        var sign = d < 0 ? -1 : 1
-        return { deg: sign * (Math.abs(d) + mi / 60 + se / 3600), hemi: m[4] ? m[4] : "" }
+    function _setLon(item, v) {
+        if (!item || !item.coordinate) return
+        item.coordinate = QtPositioning.coordinate(item.coordinate.latitude, v, item.coordinate.altitude)
     }
-    /// الحرف (N/S/E/W) يحدّد المحور عند وجوده، وإلا فالخانة هي التي تحدّده.
-    /// الـ Fact الآخر يحمل أصلاً القيمة الحالية من initValues فلا يُمسّ.
-    function _applyDegrees(item, ctl, slot, deg, hemi) {
-        var h = (hemi || "").toUpperCase()
-        var isLat = (h === "N" || h === "S") ? true
-                  : (h === "E" || h === "W") ? false
-                  : (slot === 0)
-        var v = deg
-        if (h === "S" || h === "W") v = -Math.abs(v)
-        if (isLat) ctl.latitude.rawValue = v
-        else       ctl.longitude.rawValue = v
-        ctl.setFromGeo()
-        wpRoot._commitCoord(item, ctl)
-    }
-    function _applyCoordEdit(item, ctl, slot, raw) {
-        if (!item || !ctl || !item.specifiesCoordinate) return
-        var str = ("" + raw).trim()
-        if (str.length === 0) return
-
-        // ① MGRS — رقم النطاق + حرف الشريط + حرفا المربّع
-        if (/^\d{1,2}\s*[C-HJ-NP-X]\s*[A-Z]{2}[\s\d]*$/i.test(str)) {
-            ctl.mgrs.rawValue = str.toUpperCase()
-            ctl.setFromMGRS()
-            wpRoot._commitCoord(item, ctl)
-            return
-        }
-
-        // ② UTM كامل — نطاق + نصف + easting + northing
-        var mFull = str.match(/^(\d{1,2})\s*([NS])\s+([\d.]+)\s+([\d.]+)$/i)
-        if (mFull) {
-            ctl.zone.rawValue       = parseInt(mFull[1])
-            ctl.hemisphere.rawValue = (mFull[2].toUpperCase() === "S") ? 1 : 0
-            ctl.easting.rawValue    = parseFloat(mFull[3])
-            ctl.northing.rawValue   = parseFloat(mFull[4])
-            ctl.setFromUTM()
-            wpRoot._commitCoord(item, ctl)
-            return
-        }
-
-        // ③ UTM جزئي — كما يُعرض في خانة EASTING
-        var mPart = str.match(/^(\d{1,2})\s*([NS])\s+([\d.]+)$/i)
-        if (mPart) {
-            ctl.zone.rawValue       = parseInt(mPart[1])
-            ctl.hemisphere.rawValue = (mPart[2].toUpperCase() === "S") ? 1 : 0
-            if (slot === 0) ctl.easting.rawValue  = parseFloat(mPart[3])
-            else            ctl.northing.rawValue = parseFloat(mPart[3])
-            ctl.setFromUTM()
-            wpRoot._commitCoord(item, ctl)
-            return
-        }
-
-        // ④ زوج جغرافي "lat, lon"
-        var mPair = str.match(/^(-?[\d.]+)\s*[,;]\s*(-?[\d.]+)$/)
-        if (mPair) {
-            ctl.latitude.rawValue  = parseFloat(mPair[1])
-            ctl.longitude.rawValue = parseFloat(mPair[2])
-            ctl.setFromGeo()
-            wpRoot._commitCoord(item, ctl)
-            return
-        }
-
-        // ⑤ DMS
-        var dms = wpRoot._parseDms(str)
-        if (dms !== null) {
-            wpRoot._applyDegrees(item, ctl, slot, dms.deg, dms.hemi)
-            return
-        }
-
-        // ⑥ رقم مجرد، مع حرف اتجاه اختياري
-        var mNum = str.match(/^(-?[\d.]+)\s*([NSEW])?$/i)
-        if (!mNum) return
-        var v = parseFloat(mNum[1])
-        if (isNaN(v)) return
-        if (wpRoot._coordFmt === 1 && !mNum[2]) {
-            if (slot === 0) ctl.easting.rawValue  = v
-            else            ctl.northing.rawValue = v
-            ctl.setFromUTM()
-            wpRoot._commitCoord(item, ctl)
-        } else {
-            wpRoot._applyDegrees(item, ctl, slot, v, mNum[2] ? mNum[2] : "")
-        }
-    }
-
-    // ── TTS: اختيار الصف من أي خلية ──────────────────────────────────────
-    //  خلايا TextInput تبتلع النقرة فلا تصل لـ MouseArea الصف (z: -1)، فكان
-    //  التحرير في خلية لا يُظلّل صفها. الآن كل خلية تفاعلية تستدعي هذه.
-    //
-    //  _selfSelect يميّز التغيير الصادر من الجدول عن التغيير الصادر من
-    //  الخريطة: الأول يجب ألا يسحب التركيز (وإلا لخرجنا من الخانة التي ضغطنا
-    //  عليها للتو)، والثاني يجب أن يسحبه (وإلا بقيت خانة مضيئة في صف لم يعد
-    //  مختاراً). الإشارات في Qt متزامنة فالعَلَم صالح خلال الاستدعاء.
-    property bool _selfSelect: false
-    function _selectRow(item) {
-        if (!_mc || !item) return
-        if (_mc.currentPlanViewSeqNum === item.sequenceNumber) return
-        _selfSelect = true
-        _mc.setCurrentPlanViewSeqNum(item.sequenceNumber, true)
-        _selfSelect = false
-    }
-    readonly property int _curSeq: _mc ? _mc.currentPlanViewSeqNum : -1
-    on_CurSeqChanged: if (!wpRoot._selfSelect) wpRoot.forceActiveFocus()
-
     function _angleText(item) {
         if (!item) return "-.-"
         var dist = item.distance
@@ -326,15 +198,11 @@ Rectangle {
         property string text:      ""
         property bool   editable:  true
         property color  textColor: wpRoot.cWhite
-        // النص الخام لا رقم — الخانة تقبل عدة صيغ والتحليل في _applyCoordEdit
-        signal committedText(string value)
-        // تُطلق عند دخول التركيز، ليتمكّن الصف من تظليل نفسه
-        signal focused()
+        signal committed(real value)
         height: wpRoot._rowH
         color:  ti.activeFocus ? Qt.rgba(0, 1, 0.53, 0.10) : "transparent"
-        // TTS: الكتابة في TextInput تكسر ربط text نهائياً. إعادة المزامنة هنا
-        //      تُرجع الخانة لقيمتها الحقيقية عند تغيّر المصدر من الخارج
-        //      (تحريك النقطة على الخريطة، تبديل الوحدة...).
+        // إعادة المزامنة عند تغيّر المصدر من خارج الحقل (تحريك النقطة على
+        // الخريطة مثلاً) بعد أن كسر المستخدم الربط بالكتابة.
         onTextChanged: if (!ti.activeFocus) ti.text = cell.text
         Rectangle { anchors.right: parent.right; anchors.top: parent.top; anchors.bottom: parent.bottom; width: 1; color: wpRoot.cBorder }
         TextMetrics {
@@ -360,22 +228,16 @@ Rectangle {
             }
             color:               cell.textColor
             selectByMouse:       true
-            // خروج بقيمة غير صالحة أو حقل فارغ لا يكتب شيئاً، فنُرجع المعروض
-            // لقيمته الحقيقية بدل ترك الخانة فارغة. والتحديد الأزرق يبقى
-            // مرسوماً بعد فقدان التركيز ما لم يُمسح صراحةً.
-            onActiveFocusChanged: {
-                if (activeFocus) {
-                    cell.focused()
-                } else {
-                    deselect()
-                    text = cell.text
-                }
-            }
+            // TTS: الكتابة في TextInput تكسر ربط text نهائياً. لو خرج
+            //      المستخدم بحقل فارغ أو قيمة غير صالحة لا يُكتب شيء ولا
+            //      يعود الربط، فتبقى الخانة فارغة للأبد رغم سلامة البيانات.
+            onActiveFocusChanged: if (!activeFocus) { deselect(); text = cell.text }
             readOnly:            !cell.editable
             clip:                true
             text:                cell.text
             onEditingFinished: {
-                if (text !== cell.text) cell.committedText(text)
+                var v = parseFloat(text)
+                if (!isNaN(v)) cell.committed(v)
                 focus = false
             }
         }
@@ -440,7 +302,6 @@ Rectangle {
             //      preventStealing لا يصل exited بعد الإفلات — فكانت
             //      الإضاءة الخضراء تبقى على كل حدّ لمسته.
             //      pressed مضمومة إليها لتبقى مضيئة طوال السحب.
-            //      readonly = مشتقة لا مُسنَدة، فلا يمكن أن تعلق أصلاً.
             readonly property bool _active: resizeHover.hovered || resizeMa.pressed
 
             HoverHandler {
@@ -474,6 +335,9 @@ Rectangle {
         onPressed: function(mouse) { mouse.accepted = true }
         onWheel: function(wheel) { wheel.accepted = true }
     }
+    readonly property int _curSeq: _mc ? _mc.currentPlanViewSeqNum : -1
+    on_CurSeqChanged: wpRoot.forceActiveFocus()
+
     Connections {
         target: wpRoot._curItem
         ignoreUnknownSignals: true
@@ -551,6 +415,7 @@ Rectangle {
                                     font.family: "monospace"
                                     color: wpRoot.cOrange
                                     selectByMouse: true
+                                    onActiveFocusChanged: if (!activeFocus) deselect()
                                     clip: true
                                     Component.onCompleted: {
                                         var r = parent.parent.parent._radFact
@@ -719,7 +584,7 @@ Rectangle {
                         z: -1
                         onClicked: {
                             wpRoot.forceActiveFocus()
-                            wpRoot._selectRow(fRowItem._item)
+                            if (wpRoot._mc && fRowItem._item) wpRoot._mc.setCurrentPlanViewSeqNum(fRowItem._item.sequenceNumber, true)
                         }
                     }
                     Row {
@@ -729,9 +594,6 @@ Rectangle {
                             id: fTypeCell
                             width:  wpRoot.colType
                             height: wpRoot._rowH
-                            // TTS: HoverHandler بدل containsMouse — فتح
-                            //      MissionCommandDialog يخطف قبض الفأرة فلا
-                            //      يصل exited، وكانت الخلية تبقى مضيئة أبداً.
                             color:  fTypeHover.hovered ? Qt.rgba(0, 1, 0.53, 0.08) : "transparent"
                             HoverHandler { id: fTypeHover }
                             Rectangle { anchors.right: parent.right; anchors.top: parent.top; anchors.bottom: parent.bottom; width: 1; color: wpRoot.cBorder }
@@ -763,7 +625,6 @@ Rectangle {
                                 hoverEnabled: true
                                 onClicked: {
                                     wpRoot.forceActiveFocus()
-                                    wpRoot._selectRow(fRowItem._item)
                                     if (fRowItem._item && wpRoot.planMasterController && wpRoot.map) {
                                         cmdDialogFactory.currentItem = fRowItem._item
                                         cmdDialogFactory.open()
@@ -846,17 +707,14 @@ Rectangle {
                             z: -1
                             onClicked: {
                                 wpRoot.forceActiveFocus()
-                                wpRoot._selectRow(rowItem._item)
+                                if (wpRoot._mc && rowItem._item) wpRoot._mc.setCurrentPlanViewSeqNum(rowItem._item.sequenceNumber, true)
                             }
                         }
                         Row {
                             anchors.fill: parent
                             EditCell {
                                 width:     wpRoot.colLat
-                                // TTS: قابلة للتحرير في الصيغ الثلاث — المحلّل
-                                //      يتعرّف على الشكل المكتوب مهما كانت الصيغة
-                                //      المعروضة، فلا حاجة لقصرها على Geographic.
-                                editable:  rowItem._item && rowItem._item.specifiesCoordinate
+                                editable:  wpRoot._coordFmt === 0 && rowItem._item && rowItem._item.specifiesCoordinate
                                 textColor: wpRoot.cWhite
                                 TransformPositionController {
                                     id: latCtl
@@ -872,12 +730,13 @@ Rectangle {
                                 }
                                 text: (rowItem._item && rowItem._item.specifiesCoordinate)
                                       ? wpRoot._fmtCoordSlot(latCtl, rowItem._item.coordinate, 0) : "\u2014"
-                                onCommittedText: (v) => wpRoot._applyCoordEdit(rowItem._item, latCtl, 0, v)
-                                onFocused:       wpRoot._selectRow(rowItem._item)
+                                onCommitted: (v) => {
+                                    if (rowItem._item && rowItem._item.specifiesCoordinate) wpRoot._setLat(rowItem._item, v)
+                                }
                             }
                             EditCell {
                                 width:     wpRoot.colLon
-                                editable:  rowItem._item && rowItem._item.specifiesCoordinate
+                                editable:  wpRoot._coordFmt === 0 && rowItem._item && rowItem._item.specifiesCoordinate
                                 textColor: wpRoot.cWhite
                                 TransformPositionController {
                                     id: lonCtl
@@ -893,8 +752,9 @@ Rectangle {
                                 }
                                 text: (rowItem._item && rowItem._item.specifiesCoordinate)
                                       ? wpRoot._fmtCoordSlot(lonCtl, rowItem._item.coordinate, 1) : "\u2014"
-                                onCommittedText: (v) => wpRoot._applyCoordEdit(rowItem._item, lonCtl, 1, v)
-                                onFocused:       wpRoot._selectRow(rowItem._item)
+                                onCommitted: (v) => {
+                                    if (rowItem._item && rowItem._item.specifiesCoordinate) wpRoot._setLon(rowItem._item, v)
+                                }
                             }
                             Rectangle {
                                 width:  wpRoot.colAlt
@@ -925,20 +785,14 @@ Rectangle {
                                         font.family: "monospace"
                                         color: rowItem._item && rowItem._item.specifiesAltitude ? wpRoot.cNeon : wpRoot.cWhite
                                         selectByMouse: true
+                                        onActiveFocusChanged: if (!activeFocus) { deselect(); text = _display }
                                         readOnly: !(rowItem._item && rowItem._item.specifiesAltitude)
-                                        // TTS: مصدر العرض منفصل عن محتوى الحقل، لأن الكتابة
-                                        //      تكسر ربط text نهائياً. بلا هذا، الخروج بحقل
-                                        //      فارغ يترك الخانة فارغة للأبد رغم سلامة الارتفاع.
                                         readonly property string _display:
                                               (rowItem._item && rowItem._item.specifiesAltitude && rowItem._item.altitude)
                                               ? QGroundControl.unitsConversion.metersToAppSettingsVerticalDistanceUnits(rowItem._item.altitude.rawValue).toFixed(1)
                                               : "\u2014"
                                         text: _display
                                         on_DisplayChanged: if (!activeFocus) text = _display
-                                        onActiveFocusChanged: {
-                                            if (activeFocus) wpRoot._selectRow(rowItem._item)
-                                            else { deselect(); text = _display }
-                                        }
                                         onEditingFinished: {
                                             if (rowItem._item && rowItem._item.altitude) {
                                                 var v = parseFloat(text)
@@ -1009,9 +863,9 @@ Rectangle {
                                         font.family:         "monospace"
                                         color:               pCell._rf ? wpRoot.cOrange : wpRoot.cWhite
                                         selectByMouse:       true
+                                        onActiveFocusChanged: if (!activeFocus) { deselect(); text = _display }
                                         readOnly:            !pCell._rf || pCell._isEnum
                                         clip:                true
-                                        // نفس مبدأ ALT: مصدر منفصل حتى لا تفرغ الخانة نهائياً
                                         readonly property string _display: {
                                             if (!pCell._rf) return "\u2014"
                                             if (!pCell._isEnum && isNaN(pCell._rf.rawValue)) return "\u2014"
@@ -1020,10 +874,6 @@ Rectangle {
                                         }
                                         text: _display
                                         on_DisplayChanged: if (!activeFocus) text = _display
-                                        onActiveFocusChanged: {
-                                            if (activeFocus) wpRoot._selectRow(rowItem._item)
-                                            else { deselect(); text = _display }
-                                        }
                                         onEditingFinished: {
                                             if (pCell._rf && !pCell._isEnum) {
                                                 var v = parseFloat(text)
@@ -1053,7 +903,6 @@ Rectangle {
                                         cursorShape: Qt.PointingHandCursor
                                         onClicked: {
                                             wpRoot.forceActiveFocus()
-                                            wpRoot._selectRow(rowItem._item)
                                             enumMenu.open()
                                         }
                                     }
@@ -1098,7 +947,7 @@ Rectangle {
                                             font.family: "monospace"
                                             color: wpRoot.cRed
                                         }
-                                        MouseArea { id: delMa; anchors.fill: parent; hoverEnabled: true; onClicked: { wpRoot.forceActiveFocus(); wpRoot._selectRow(rowItem._item); wpRoot._remove(index) } }
+                                        MouseArea { id: delMa; anchors.fill: parent; hoverEnabled: true; onClicked: { wpRoot.forceActiveFocus(); if (wpRoot._mc && rowItem._item) wpRoot._mc.setCurrentPlanViewSeqNum(rowItem._item.sequenceNumber, true); wpRoot._remove(index) } }
                                     }
                                     Rectangle {
                                         readonly property bool _canMove: rowItem._item && rowItem._item.command === 16

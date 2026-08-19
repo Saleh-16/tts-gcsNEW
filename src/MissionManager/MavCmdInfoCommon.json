@@ -79,7 +79,7 @@
             "param3": {
                 "label": "Radius",
                 "units": "m",
-                "default": 50.0,
+                "default": 1000.0,
                 "decimalPlaces": 2,
                 "userMin": -100,
                 "userMax": 100
@@ -122,7 +122,7 @@
             "param3": {
                 "label": "Radius",
                 "units": "m",
-                "default": 50.0,
+                "default": 1000.0,
                 "decimalPlaces": 2,
                 "userMin": -100,
                 "userMax": 100
@@ -131,7 +131,7 @@
                 "label": "Exit loiter from",
                 "enumStrings": "Center,Tangent",
                 "enumValues": "0,1",
-                "default": 1,
+                "default": 0,
                 "decimalPlaces": 0
             }
         },
@@ -147,7 +147,7 @@
             "param1": {
                 "label": "Loiter Time",
                 "units": "secs",
-                "default": 30,
+                "default": 120,
                 "decimalPlaces": 0,
                 "min": 0,
                 "userMin": 0,
@@ -163,7 +163,7 @@
             "param3": {
                 "label": "Radius",
                 "units": "m",
-                "default": 50.0,
+                "default": 1000.0,
                 "decimalPlaces": 2,
                 "userMin": -100,
                 "userMax": 100
@@ -172,7 +172,7 @@
                 "label": "Exit loiter from",
                 "enumStrings": "Center,Tangent",
                 "enumValues": "0,1",
-                "default": 1,
+                "default": 0,
                 "decimalPlaces": 0
             }
         },
@@ -282,7 +282,7 @@
             "param2": {
                 "label": "Radius",
                 "units": "m",
-                "default": 50.0,
+                "default": 1000.0,
                 "decimalPlaces": 2,
                 "userMin": -100,
                 "userMax": 100
@@ -291,7 +291,7 @@
                 "label": "Exit loiter from",
                 "enumStrings": "Center,Tangent",
                 "enumValues": "0,1",
-                "default": 1,
+                "default": 0,
                 "decimalPlaces": 0
             }
         },

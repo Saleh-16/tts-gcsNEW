@@ -20,8 +20,14 @@ import QtCore
 ///                                1-2 digits per part) + operator name.
 ///                                REQUIRED before the control surface test
 ///                                or DONE/CONFIRM can proceed.
-///   1. Automatic Checks       — 7 live vehicle checks (Battery, GPS, Compass,
-///                                EKF, Vibration, Telemetry, Mission)
+///   1. Automatic Checks       — 6 live vehicle checks (Battery, GPS, Compass,
+///                                EKF, Vibration, Mission). Telemetry is
+///                                temporarily disabled (commented out) — may
+///                                be re-enabled later. Battery is judged by
+///                                VOLTAGE (not ArduPilot's percentage, which
+///                                assumes a full pack at every boot) and
+///                                reads BOTH packs when a second one is
+///                                connected; the worst of the two decides.
 ///   2. Control Surface Test   — RC_CHANNELS_OVERRIDE driven. Operator picks
 ///                                Automatic (runs all 4 steps unattended,
 ///                                waiting between each) or Manual (Run /
@@ -36,7 +42,7 @@ import QtCore
 ///                                for that side to count as passing (strict
 ///                                AND), so a single failed servo isn't masked
 ///                                by a working twin.
-///   3. Manual Checklist       — 6 operator confirmations
+///   3. Manual Checklist       — 5 operator confirmations
 ///   4. Inspection Summary     — go / no-go banner, DONE / fly-at-own-risk
 ///
 /// On DONE (or CONFIRM, for the fly-at-own-risk path) the inspection report
@@ -45,11 +51,12 @@ import QtCore
 /// see MissionReviewPanel.qml). The operator sees nothing about the save
 /// itself — the file exists purely for auditing and compliance.
 ///
-/// Save location: QGroundControl.settingsManager.appSettings.missionSavePath
-/// — QGC's own fixed mission-save folder, used consistently across the app.
-/// This avoids all StandardPaths/toLocalFile platform-portability issues
-/// entirely, since this setting is already guaranteed to resolve correctly
-/// on every platform QGC runs on (Linux, Windows, macOS).
+/// Save location: QGroundControl.settingsManager.appSettings.logSavePath
+/// — QGC's own fixed log-save folder, used consistently across the app for
+/// onboard/application logs. This avoids all StandardPaths/toLocalFile
+/// platform-portability issues entirely, since this setting is already
+/// guaranteed to resolve correctly on every platform QGC runs on (Linux,
+/// Windows, macOS).
 Column {
     id: control
     property int  sectionIndex: 9
@@ -88,8 +95,16 @@ Column {
         // ── Automatic check thresholds ────────────────────────────────────
         // Airframe decisions, not code decisions. Only the vibration figures
         // come from published ArduPilot guidance; tune the rest per aircraft.
-        property real batteryWarnPct: 95
-        property real batteryFailPct: 95
+        //
+        // batteryMinVolts is a VOLTAGE threshold, not a percentage.
+        // ArduPilot derives percentRemaining by subtracting consumed mAh
+        // from BATT_CAPACITY starting at 100% on every boot — so a pack
+        // that was only 66% charged when powered on still reports ~99%.
+        // Voltage is measured directly and doesn't lie.
+        //
+        // 8.22V on a 2S LiPo (4.11V/cell) is roughly 90% state of charge.
+        // For other pack sizes: 3S = 12.33, 4S = 16.44, 6S = 24.66
+        property real batteryMinVolts: 8
         property int  gpsMinSats:     10
         property real gpsMaxHdop:     1.5
         property real vibeWarnMs2:    30      // ArduPilot: <30 good, >60 bad
@@ -244,16 +259,40 @@ Column {
             var b = _try(function() { return _v.batteries.get(0) })
             return b ? b : _try(function() { return _v.battery })
         }
+        /// Judges state of charge by VOLTAGE rather than percentRemaining.
+        /// ArduPilot computes its percentage by subtracting consumed mAh
+        /// from BATT_CAPACITY starting at 100% every boot — so a pack that
+        /// was only 66% charged when powered on still reports ~99%.
+        /// Voltage is measured directly by the power module and reflects
+        /// the real state of charge.
+        ///
+        /// Reads both batteries when a second is present; the worst pack
+        /// decides the overall status — a full Battery 1 can't mask a low
+        /// Battery 2 (or vice versa). Airframes with one battery fall back
+        /// to single-pack behavior automatically.
+        ///
+        /// NOTE: Battery 2 requires BATT2_MONITOR != 0 AND non-zero
+        /// BATT2_LOW_VOLT / BATT2_CRT_VOLT — with zero thresholds ArduPilot
+        /// rejects the reading as unhealthy and the pack never appears here.
         function _checkBattery() {
             if (!_ok) return _noVehicle()
-            var b = _batteryGroup()
-            if (!b) return _noSource()
-            var pct  = _try(function() { return b.percentRemaining.rawValue })
-            var volt = _try(function() { return b.voltage.valueString })
-            if (!_isNum(pct)) return _noSource()
-            var status = pct < batteryFailPct ? PreFlightStatus.Fail : PreFlightStatus.Pass
-            var detail = pct.toFixed(0) + "%"
-            if (volt !== undefined) detail = volt + "  \u00B7  " + detail
+            var b1 = _try(function() { return _v.batteries.get(0) })
+            if (!b1) return _noSource()
+            var volt1 = _try(function() { return b1.voltage.rawValue })
+            if (!_isNum(volt1) || volt1 <= 0) return _noSource()
+            var b2 = _try(function() { return _v.batteries.get(1) })
+            if (b2) {
+                var volt2 = _try(function() { return b2.voltage.rawValue })
+                if (_isNum(volt2) && volt2 > 0) {
+                    var worstVolt = Math.min(volt1, volt2)
+                    var status2   = worstVolt < batteryMinVolts ? PreFlightStatus.Fail : PreFlightStatus.Pass
+                    var detail2   = "B1: " + volt1.toFixed(2) + "V  \u00B7  B2: " + volt2.toFixed(2) + "V"
+                    return _result(status2, detail2)
+                }
+            }
+            // Single-battery fallback.
+            var status = volt1 < batteryMinVolts ? PreFlightStatus.Fail : PreFlightStatus.Pass
+            var detail = volt1.toFixed(2) + "V"
             return _result(status, detail)
         }
         // ── GPS ───────────────────────────────────────────────────────────
@@ -332,6 +371,8 @@ Column {
         // ── Telemetry ─────────────────────────────────────────────────────
         // CONFIRMED: Vehicle.h → radioStatus group; RadioStatusFactGroup.h
         // exposes lrssi/rrssi in dBm.
+        // Currently disabled (see automaticChecks list and evaluate()) but
+        // kept here in case it's needed again later.
         function _checkTelemetry() {
             if (!_ok) return _noVehicle()
             var lost = _try(function() { return _v.vehicleLinkManager.communicationLost })
@@ -358,6 +399,10 @@ Column {
             return _result(PreFlightStatus.Pass, qsTr("Synced with vehicle"))
         }
         // ── Evaluate all automatic checks ─────────────────────────────────
+        // Indices track the automaticChecks ListModel above: Battery(0),
+        // GPS(1), Compass(2), EKF(3), Vibration(4), Mission(5). Telemetry
+        // is skipped — see the commented-out ListElement and the commented
+        // _apply(5, _checkTelemetry()) call below.
         function evaluate() {
             _apply(0, _checkBattery())
             _apply(1, _checkGps())
@@ -552,9 +597,10 @@ Column {
         /// closing signals completion.
         ///
         /// Save location: QGroundControl.settingsManager.appSettings
-        /// .missionSavePath — QGC's own fixed mission-save folder. This is
-        /// the exact same location/pattern already proven to work on every
-        /// platform via MissionReviewPanel.qml's Risk Report save.
+        /// .logSavePath — QGC's own fixed log-save location. Same
+        /// proven-working pattern as MissionReviewPanel.qml's Risk Report
+        /// save, just pointed at the log folder instead of the mission
+        /// folder.
         ///
         /// Both the aircraft serial (fixed "M X-X" format) and operator name
         /// are required fields (enforced by the calling buttons' enabled
@@ -589,10 +635,15 @@ Column {
                 if (alt) lines.push("Altitude AMSL:  " + alt)
                 var bg = _batteryGroup()
                 if (bg) {
-                    var pct  = _try(function(){return bg.percentRemaining.rawValue})
-                    var volt = _try(function(){return bg.voltage.valueString})
-                    lines.push("Battery:        " + (volt||"-") + "  " + (pct ? pct.toFixed(0)+"%" : "-"))
+                    var volt = _try(function(){return bg.voltage.rawValue})
+                    lines.push("Battery 1:      " + (_isNum(volt) ? volt.toFixed(2)+"V" : "-"))
                 }
+                var bg2 = _try(function(){return _v.batteries.get(1)})
+                if (bg2) {
+                    var volt2 = _try(function(){return bg2.voltage.rawValue})
+                    lines.push("Battery 2:      " + (_isNum(volt2) ? volt2.toFixed(2)+"V" : "-"))
+                }
+                lines.push("Batt Threshold: " + batteryMinVolts.toFixed(2) + "V minimum")
                 var lock = _try(function(){return _v.gps.lock.rawValue})
                 var sats = _try(function(){return _v.gps.count.rawValue})
                 var hdop = _try(function(){return _v.gps.hdop.rawValue})
@@ -627,7 +678,7 @@ Column {
             lines.push("-- Manual Checklist --")
             for (var j = 0; j < manualChecklist.count; ++j) {
                 var m = manualChecklist.get(j)
-                lines.push("  " + (m.checked ? "[x]" : "[ ]") + " " + m.label)
+                lines.push("  " + (m.checked ? "\u2713" : "\u2717") + "  " + m.label)
             }
             lines.push("")
             lines.push("==================================================")
@@ -645,16 +696,14 @@ Column {
             var serial   = vehicleSerial.trim().replace(/[^a-zA-Z0-9_-]/g, "")
             var operator = operatorName.trim().replace(/[^a-zA-Z0-9_-]/g, "")
             var namePart = serial + "_" + operator + "_"
-
             // Save using the same proven pattern already used elsewhere in
             // the app (see MissionReviewPanel.qml's Risk Report save):
             // fileWriter is a global context property (registered in
-            // QGCCorePlugin.cc), and appSettings.missionSavePath is QGC's
-            // own fixed mission-save location — sidesteps all
-            // StandardPaths/toLocalFile portability issues entirely.
+            // QGCCorePlugin.cc), and appSettings.logSavePath is QGC's own
+            // fixed log-save location — sidesteps all StandardPaths/
+            // toLocalFile portability issues entirely.
             var saveDir  = _try(function() { return QGroundControl.settingsManager.appSettings.logSavePath.toString() }) || ""
             var savePath = saveDir + "/PFI_" + namePart + timestamp + ".txt"
-
             if (fileWriter.save(savePath, content)) {
                 console.log("PFI report saved: " + savePath + " (" + content.length + " chars)")
             } else {
@@ -665,7 +714,7 @@ Column {
     // ═══════════════════════════════════════════════════════════════════════
     //  TIMERS
     // ═══════════════════════════════════════════════════════════════════════
-    // Polls the seven automatic checks once per second while the popup is
+    // Polls the automatic checks once per second while the popup is
     // expanded. Stops when collapsed to save CPU.
     Timer {
         interval:         1000
@@ -804,6 +853,7 @@ Column {
                                 Layout.fillWidth: true
                                 placeholderText: qsTr("e.g. Saleh")
                                 text: inspectionController.operatorName
+                                color: "white"
                                 onEditingFinished: inspectionController.operatorName = text
                             }
                         }
@@ -1047,19 +1097,16 @@ Column {
                                 afterLeft  = s.left
                                 afterRight = s.right
                                 inspectionController.releaseOverride()
-
                                 var allLeftMoved = beforeLeft.length > 0
                                 for (var i = 0; i < beforeLeft.length; ++i) {
                                     var moved = afterLeft[i] > 0 && Math.abs(afterLeft[i] - beforeLeft[i]) > 30
                                     if (!moved) { allLeftMoved = false; break }
                                 }
-
                                 var allRightMoved = beforeRight.length > 0
                                 for (var j = 0; j < beforeRight.length; ++j) {
                                     var movedR = afterRight[j] > 0 && Math.abs(afterRight[j] - beforeRight[j]) > 30
                                     if (!movedR) { allRightMoved = false; break }
                                 }
-
                                 if (allLeftMoved && allRightMoved) {
                                     state = "pass"
                                     inspectionController.setElevonStepStatus(stepIndex, PreFlightStatus.Pass)
@@ -1077,7 +1124,7 @@ Column {
                             // reading it back.
                             Timer {
                                 id:          readbackTimer
-                                interval:    1000
+                                interval:    1500
                                 repeat:      false
                                 onTriggered: wizard.checkReadback()
                             }
