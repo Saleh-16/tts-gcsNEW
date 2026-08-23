@@ -47,11 +47,9 @@ Item {
     // ── Unit scale: every size below is "_u * factor" instead of a raw pixel,
     //     so the whole UI adapts to any screen size / DPI / user font setting ─
     readonly property real _u: ScreenTools.defaultFontPixelWidth
-
     // ── TTS: صيغة عرض الإحداثيات — نفس إعداد Plan View (Fact محفوظ) ──────
     //     0 = GEO   1 = UTM   2 = MGRS
     readonly property int _coordFmt: QGroundControl.settingsManager.appSettings.coordinateFormat.rawValue
-
     // TTS: تنسيق إحداثي. ctl = TransformPositionController خاص بالصف
     //      (setCoordinate تخزّن فقط — initValues() هي التي تملأ الـ Facts).
     function _fmtCoord(ctl, coord) {
@@ -164,7 +162,6 @@ Item {
     property int    _gndSpdDecimals:   (_unitGndSpd === "km/s") ? 3 : 1
     property string _unitVolt:   _bat0 && _bat0.voltage ? _bat0.voltage.units : qsTr("V")
     property string _unitWndSpd: _ok ? _v.wind.speed.units  : qsTr("m/s")
-
     // ── RELATIVE WIND (aircraft body frame) ─────────────────────────────
     //     θ = WindDirection − Heading, normalized to [−180, +180].
     //       0° = headwind   +90° = from starboard   −90° = from port   ±180° = tailwind
@@ -180,7 +177,6 @@ Item {
     }
     property real _headwind:  _windSpdDisp * Math.cos(_windRel * Math.PI / 180)   // +ve = headwind, −ve = tailwind
     property real _crosswind: _windSpdDisp * Math.sin(_windRel * Math.PI / 180)   // +ve = from starboard, −ve = from port
-
     // ── Ground-speed session MAX / MIN tracker (updated on every change) ────
     property real _spdMax:  0
     property real _spdMin:  0
@@ -519,6 +515,8 @@ Item {
                     width:  height * (7.6 / 28)
                     // Tape scale
                     readonly property real _ts: height / 28
+                    // TTS: خطوة السلّم بوحدات الارتفاع (نظير root._spdStep في spdTape)
+                    readonly property real _altStep: 100
                     // Header label ("ALT AMSL" + current altitude unit)
                     Text {
                         anchors.top: parent.top
@@ -538,13 +536,21 @@ Item {
                         Column {
                             anchors.horizontalCenter: parent.horizontalCenter
                             anchors.verticalCenter: parent.verticalCenter
-                            anchors.verticalCenterOffset: (root._rawAlt % 100) * altTape._ts * 0.168
+                            // TTS: توحيد آلية الانزلاق مع spdTape — الإزاحة مُطبَّعة على
+                            //      الخطوة (0..1) بدل بكسل لكل متر. الصيغة القديمة كانت
+                            //      تعطي إزاحة تصل لـ _ts*16.8 (ارتفاع النافذة كاملاً)،
+                            //      فيُدفع الرقم الصحيح خارج الحقل ويظهر رقم أعلى بدرجة.
+                            // anchors.verticalCenterOffset: (root._rawAlt % 100) * altTape._ts * 0.168
+                            anchors.verticalCenterOffset: (root._rawAlt % altTape._altStep) / altTape._altStep * altTape._ts * 0.84
                             spacing: altTape._ts * 2.8
                             Repeater {
                                 model: 9
                                 delegate: Row {
                                     spacing: altTape._ts * 0.6
-                                    property real val: ((root._rawAlt/100|0) + 4 - index) * 100
+                                    // TTS: Math.floor بدل bitwise (|0) — نفس نمط spdTape،
+                                    //      وآمن مع الارتفاعات السالبة (تحت سطح البحر).
+                                    // property real val: ((root._rawAlt/100|0) + 4 - index) * 100
+                                    property real val: (Math.floor(root._rawAlt / altTape._altStep) + 4 - index) * altTape._altStep
                                     Text { text: val.toFixed(0); font.bold:true; font.pixelSize: altTape._ts * 2; font.family:"monospace"; color: root.cWhite }
                                     Rectangle { width: altTape._ts * 1.6; height: Math.max(1, altTape._ts * 0.2); color: root.cNeon; anchors.verticalCenter:parent.verticalCenter }
                                 }
@@ -923,7 +929,6 @@ Item {
                                         }
                                         Text {
                                             width: tableHeader.cCoord; height: parent.height; verticalAlignment: Text.AlignVCenter
-
                                             // TTS: محوّل QGC مستقل لهذا الصف
                                             TransformPositionController {
                                                 id: rowCtl
@@ -937,7 +942,6 @@ Item {
                                                 ignoreUnknownSignals: true
                                                 function onCoordinateChanged() { rowCtl.initValues() }
                                             }
-
                                             text: rowRoot._mi && rowRoot._mi.coordinate !== undefined
                                                   ? root._fmtCoord(rowCtl, rowRoot._mi.coordinate)
                                                   : "--"
